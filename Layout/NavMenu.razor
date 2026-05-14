@@ -1,0 +1,127 @@
+﻿@using CBreaseWebApp1
+@inject ProjectState ProjectState
+@inject IJSRuntime JS
+@using CBreaseWebApp1.Services
+
+<!-- Mobile / Tablet top bar -->
+<div class="mobile-top-nav">
+    <div class="top-row ps-3 pe-3 navbar navbar-dark">
+        <div class="container-fluid d-flex align-items-center justify-content-between">
+            <a class="navbar-brand" href="">CBrease Field App</a>
+
+            <nav class="top-nav-links">
+                <NavLink href="" Match="NavLinkMatch.All">Summary</NavLink>
+                <NavLink href="cross-sections">Cross-Sections</NavLink>
+                <NavLink href="export-cross-section">Export</NavLink>
+            </nav>
+
+            <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu" type="button">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+        </div>
+    </div>
+
+    <div class="@NavMenuCssClass nav-scrollable nav-menu-shell mobile-dropdown">
+        <nav class="nav flex-column">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="" Match="NavLinkMatch.All" @onclick="CloseNavMenu">
+                    <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Summary
+                </NavLink>
+            </div>
+
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="cross-sections" @onclick="CloseNavMenu">
+                    <span class="bi bi-list" aria-hidden="true"></span> Cross-Sections
+                </NavLink>
+            </div>
+
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="export-cross-section" @onclick="CloseNavMenu">
+                    <span class="bi bi-download" aria-hidden="true"></span> Export
+                </NavLink>
+            </div>
+        </nav>
+
+        <div class="nav-version px-3 py-2">
+            <span class="nav-version-number">@($"v{AppInfo.Version}")</span>
+            <span class="nav-version-date">@buildTimestampDisplay</span>
+        </div>
+    </div>
+</div>
+
+<!-- Desktop sidebar -->
+<div class="desktop-sidebar-nav">
+    <div class="sidebar-brand px-3 pt-3 pb-2">
+        <a class="navbar-brand" href="">CBrease Field App</a>
+    </div>
+
+    <nav class="nav flex-column sidebar-nav-links">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Summary
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="cross-sections">
+                <span class="bi bi-list" aria-hidden="true"></span> Cross-Sections
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="export-cross-section">
+                <span class="bi bi-download" aria-hidden="true"></span> Export
+            </NavLink>
+        </div>
+    </nav>
+
+    <div class="nav-footer px-3 pb-3">
+        <div class="nav-version">
+            <span class="nav-version-number">@($"v{AppInfo.Version}")</span>
+            <span class="nav-version-date">@buildTimestampDisplay</span>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool collapseNavMenu = true;
+    private string buildTimestampDisplay = AppInfo.BuildTimestampUtc;
+
+    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            var formattedTimestamp = await JS.InvokeAsync<string>(
+                "breaseBuildInfo.formatBuildTimestamp",
+                AppInfo.BuildTimestampUtc);
+
+            if (!string.IsNullOrWhiteSpace(formattedTimestamp))
+            {
+                buildTimestampDisplay = formattedTimestamp;
+                StateHasChanged();
+            }
+        }
+        catch (JSException)
+        {
+            buildTimestampDisplay = AppInfo.BuildTimestampUtc;
+        }
+    }
+
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+
+    private void CloseNavMenu()
+    {
+        collapseNavMenu = true;
+    }
+    private bool HasLoadedProject => ProjectState.CurrentProject is not null;
+}

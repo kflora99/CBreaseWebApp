@@ -1,0 +1,192 @@
+﻿@using Brease.Core.Models
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+
+<div class="card mb-3 point-entry">
+    <div class="card-header">
+        <strong>Point Entry</strong>
+    </div>
+
+    <div class="card-body">
+        <div class="row g-3 align-items-end point-entry-row">
+            <div class="col-12 point-col point-col-point">
+                <label class="form-label">Point No.</label>
+                <input class="form-control" type="number" value="@Point.Point" readonly />
+            </div>
+
+            <div class="col-12 point-col point-col-from">
+                <label class="form-label">From Item</label>
+                <select class="form-select" @bind="Point.FromItemNumber">
+                    @foreach (var item in FromItems)
+                    {
+                        <option value="@item">@item</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-12 point-col point-col-hdist">
+                <label class="form-label">Horizontal Dist. (ft)</label>
+                <input type="number"
+                       step="any"
+                       class="form-control no-spinner"
+                       @bind="Point.HDist"
+                       @onkeydown="HandleHDistKeyDown"
+                       @ref="_hDistRef" />
+            </div>
+
+            <div class="col-12 point-col point-col-vdist">
+                <label class="form-label">Vertical Dist. (ft)</label>
+                <input type="number"
+                       step="any"
+                       class="form-control no-spinner"
+                       @bind="Point.VDist"
+                       @onkeydown="HandleVDistKeyDown"
+                       @ref="_vDistRef" />
+            </div>
+
+            <div class="col-12 point-col point-col-desc">
+                <label class="form-label">Description</label>
+                <input type="text"
+                       class="form-control"
+                       @bind="Point.Description"
+                       @bind:event="oninput"
+                       @onkeydown="HandleDescriptionKeyDown"
+                       @ref="_descriptionRef" />
+            </div>
+
+            <div class="col-12 point-col point-col-check">
+                <div class="form-check mt-lg-0 mt-2">
+                    <input type="checkbox"
+                           class="form-check-input"
+                           id="vAdjCheck"
+                           @bind="Point.VAdjustment" />
+                    <label class="form-check-label" for="vAdjCheck">Add Vertical Adjust.</label>
+                </div>
+            </div>
+
+            <div class="col-12 point-col point-col-btn text-lg-end">
+                @if (IsEditing)
+                {
+                    <button type="button"
+                            class="btn btn-primary w-100"
+                            @onclick="OnNextPointClicked"
+                            @ref="_addButtonRef">
+                        Update
+                    </button>
+                }
+                else
+                {
+                    <button type="button"
+                            class="btn btn-primary w-100"
+                            @onclick="OnNextPointClicked"
+                            @ref="_addButtonRef">
+                        Add
+                    </button>
+                }
+            </div>
+        </div>
+
+        @if (IsEditing)
+        {
+            <div class="mt-3">
+                <button type="button" class="btn btn-outline-secondary" @onclick="OnCancelEditClicked">Cancel Edit</button>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public XData Point { get; set; } = new();
+    [Parameter] public IEnumerable<string> FromItems { get; set; } = Enumerable.Empty<string>();
+
+    [Parameter] public bool IsEditing { get; set; }
+    [Parameter] public EventCallback OnNextPoint { get; set; }
+    [Parameter] public EventCallback OnCancelEdit { get; set; }
+
+    [Parameter] public bool FocusHorizontalDistance { get; set; }
+    [Parameter] public bool FocusVerticalDistance { get; set; }
+
+    private ElementReference _hDistRef;
+    private ElementReference _vDistRef;
+    private ElementReference _descriptionRef;
+    private ElementReference _addButtonRef;
+
+    private bool _pendingHFocus;
+    private bool _pendingVFocus;
+
+    private bool _lastFocusHorizontalDistance;
+    private bool _lastFocusVerticalDistance;
+
+    protected override void OnParametersSet()
+    {
+        if (FocusHorizontalDistance && !_lastFocusHorizontalDistance)
+        {
+            _pendingHFocus = true;
+            _pendingVFocus = false;
+        }
+
+        if (FocusVerticalDistance && !_lastFocusVerticalDistance)
+        {
+            _pendingVFocus = true;
+            _pendingHFocus = false;
+        }
+
+        _lastFocusHorizontalDistance = FocusHorizontalDistance;
+        _lastFocusVerticalDistance = FocusVerticalDistance;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_pendingHFocus)
+        {
+            _pendingHFocus = false;
+            await Task.Delay(150);
+            await _hDistRef.FocusAsync();
+        }
+        else if (_pendingVFocus)
+        {
+            _pendingVFocus = false;
+            await Task.Delay(150);
+            await _vDistRef.FocusAsync();
+        }
+    }
+
+    private async Task HandleHDistKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await Task.Delay(50);
+            await _vDistRef.FocusAsync();
+        }
+    }
+
+    private async Task HandleVDistKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await Task.Delay(50);
+            await _descriptionRef.FocusAsync();
+        }
+    }
+
+    private async Task HandleDescriptionKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await Task.Delay(50);
+            await _addButtonRef.FocusAsync();
+        }
+    }
+
+    private async Task OnNextPointClicked()
+    {
+        if (OnNextPoint.HasDelegate)
+            await OnNextPoint.InvokeAsync();
+    }
+
+    private async Task OnCancelEditClicked()
+    {
+        if (OnCancelEdit.HasDelegate)
+            await OnCancelEdit.InvokeAsync();
+    }
+}

@@ -1,0 +1,1158 @@
+﻿@page "/cross-sections"
+@using System.IO
+@using System.Linq
+@using Brease.Core
+@using Brease.Core.Models
+@using CBreaseWebApp1.Services
+@using Brease.Core.Utilities
+@using Brease.Core.Geometry
+@using CBreaseWebApp1.Models
+@inject ProjectState ProjectState
+@inject CbzFileService CbzService
+@inject IJSRuntime JS
+@inject DraftStorageService DraftStorage
+@implements IDisposable
+@inject IBreaseProjectLoader ProjectLoader
+
+<h3>Cross-Section Data Collection</h3>
+
+@if (_showLoadWarning)
+{
+    <div class="alert alert-warning">
+        Please load a CBZ file from the Summary page before entering cross-section data.
+    </div>
+}
+else
+{
+    @if (ProjectState.CurrentProject?.CrossSections?.Any() == true)
+    {
+        <div class="card mb-3">
+            <div class="card-header">
+                <strong>Load Existing Cross-Section</strong>
+            </div>
+            <div class="card-body">
+                <div class="row g-2 align-items-end">
+                    <div class="col-12 col-lg-8">
+                        <label class="form-label">Saved Cross-Sections</label>
+                        <InputSelect class="form-select" @bind-Value="_selectedCrossSectionValue">
+                            <option value="">Select a saved cross-section...</option>
+                            @foreach (var item in GetSavedCrossSectionOptions())
+                            {
+                                <option value="@item.Value">@item.Label</option>
+                            }
+                        </InputSelect>
+                    </div>
+
+                    <div class="col-12 col-lg-auto">
+                        <button type="button"
+                                class="btn btn-primary w-100"
+                                @onclick="LoadExistingCrossSection"
+                                disabled="@string.IsNullOrWhiteSpace(_selectedCrossSectionValue)">
+                            Load Selected
+                        </button>
+                    </div>
+
+                    <div class="col-12 col-lg-auto">
+                        <button type="button"
+                                class="btn btn-outline-secondary w-100"
+                                @onclick="StartNewCrossSectionAsync">
+                            Start New
+                        </button>
+                    </div>
+                </div>
+
+                @if (IsEditingSavedCrossSection)
+                {
+                    <div class="mt-2 text-success">
+                        Editing an existing saved cross-section.
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    <CrossSectionHeaderForm Section="_section" OnChanged="AutoSaveDraftAsync" />
+
+    <div class="mt-3">
+        <CrossSectionPlot Project="@ProjectState.CurrentProject" DraftPoints="@ComputedPoints" />
+    </div>
+
+    <div class="mt-3">
+        <CrossSectionPointEntry Point="_draftPoint"
+                                FromItems="_fromItems"
+                                IsEditing="_editingPointIndex.HasValue"
+                                OnNextPoint="AddOrUpdatePoint"
+                                OnCancelEdit="CancelEdit"
+                                FocusHorizontalDistance="_focusHorizontalDistance"
+                                FocusVerticalDistance="_focusVerticalDistance" />
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(DraftPreviewPoint.StationString))
+    {
+        <div class="alert alert-light border mt-2 mb-0">
+            Preview station: <strong>@DraftPreviewPoint.StationString</strong>
+        </div>
+    }
+
+    <div class="mt-3 d-flex flex-wrap gap-2 align-items-center">
+        <button type="button" class="btn btn-success" @onclick="SaveCrossSectionAsync">
+            @(IsEditingSavedCrossSection ? "Update Cross-Section" : "Save Cross-Section")
+        </button>
+        <button type="button" class="btn btn-outline-secondary" @onclick="ClearWorkingSectionAsync">Clear Current X-Section</button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <div class="alert alert-info mt-3">@_statusMessage</div>
+    }
+
+    @if (_points.Count == 0)
+    {
+        <div class="alert alert-warning mt-3">
+            No points added yet. Point count = @_points.Count
+        </div>
+    }
+    else
+    {
+        <div class="mt-3">
+            <CrossSectionPointsTable Points="@ComputedPoints"
+                                     OnEditPoint="EditPoint"
+                                     OnDeletePoint="DeletePointAsync" />
+        </div>
+    }
+}
+
+
+
+@{
+    var computedPoints = ComputedPoints;
+}
+
+
+@code {
+    private bool _restoringDraft;
+    private bool _suppressAutosave;
+
+    private string? ExportMessage;
+    private string? ExportError;
+
+    private bool _focusHorizontalDistance;
+    private bool _focusVerticalDistance;
+
+    private int? _loadedCrossSectionIndex = null;
+    private string? _selectedCrossSectionValue;
+
+    private bool IsEditingSavedCrossSection => _loadedCrossSectionIndex.HasValue;
+
+    private List<XData> ComputedPoints => _points.Select(BuildComputedPoint).ToList();
+    private XData DraftPreviewPoint => BuildComputedPoint(_draftPoint);
+
+    private List<(string Value, string Label)> GetSavedCrossSectionOptions()
+    {
+        var result = new List<(string Value, string Label)>();
+
+        var sections = ProjectState.CurrentProject?.CrossSections;
+        if (sections == null || sections.Count == 0)
+            return result;
+
+        for (int i = 0; i < sections.Count; i++)
+        {
+            var s = sections[i];
+
+            var dateText = string.IsNullOrWhiteSpace(s.Date) ? "No Date" : s.Date.Trim();
+            var typeText = string.IsNullOrWhiteSpace(s.Type) ? "No Type" : s.Type.Trim();
+            result.Add((
+                i.ToString(),
+                $"{dateText} — {typeText}"
+ ));
+        }
+
+        return result;
+    }
+
+    private async Task LoadExistingCrossSection()
+    {
+        if (!int.TryParse(_selectedCrossSectionValue, out var index))
+            return;
+
+        var crossSections = ProjectState.CurrentProject?.CrossSections;
+        if (crossSections == null || index < 0 || index >= crossSections.Count)
+            return;
+
+        var saved = crossSections[index];
+
+        _suppressAutosave = true;
+        try
+        {
+            _section = CloneSectionHeader(saved);
+            _points = ClonePoints(saved.Data);
+
+            ProjectState.CrossSectionEditorPoints = _points;
+
+            _editingPointIndex = null;
+            _loadedCrossSectionIndex = index;
+            _allowSaveWithReorderWarning = false;
+
+            _draftPoint = new XData
+            {
+                Point = _points.Count + 1,
+                FromItemNumber = _fromItems.FirstOrDefault() ?? "1",
+                HDist = null,
+                VDist = null,
+                VAdjustment = false,
+                Description = string.Empty
+            };
+
+            _statusMessage = $"Loaded saved cross-section dated {saved.Date} for editing.";
+
+            ProjectState.NotifyStateChanged();
+        }
+        finally
+        {
+            _suppressAutosave = false;
+        }
+
+        await AutoSaveDraftAsync();
+
+        _focusVerticalDistance = false;
+        _focusHorizontalDistance = false;
+        await InvokeAsync(StateHasChanged);
+
+        _focusHorizontalDistance = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StartNewCrossSectionAsync()
+    {
+        _loadedCrossSectionIndex = null;
+        _selectedCrossSectionValue = null;
+
+        await ClearWorkingSectionInternalAsync(clearBrowserDraft: true);
+    }
+
+    private Section CloneSectionHeader(Section source)
+    {
+        return new Section
+        {
+            Number = source.Number,
+            Date = source.Date,
+            Type = source.Type,
+            Comments = source.Comments,
+            Collector = source.Collector,
+            VertOffset = source.VertOffset,
+            VertAdjustment = source.VertAdjustment,
+            RefFace = source.RefFace,
+            RefConstantVertical = source.RefConstantVertical,
+            RefConstantVerticalElevation = source.RefConstantVerticalElevation,
+            Data = new List<XData>()
+        };
+    }
+
+    private List<XData> ClonePoints(List<XData>? sourcePoints)
+    {
+        var result = new List<XData>();
+
+        if (sourcePoints == null)
+            return result;
+
+        foreach (var p in sourcePoints)
+        {
+            result.Add(new XData
+            {
+                Point = p.Point,
+                FromItem = p.FromItem,
+                FromItemNumber = p.FromItemNumber,
+                HDist = p.HDist,
+                VDist = p.VDist,
+                VAdjustment = p.VAdjustment,
+                Description = p.Description,
+                Station = p.Station,
+                StationString = p.StationString,
+                Elevation = p.Elevation,
+                ElevationString = p.ElevationString
+            });
+        }
+
+        return result;
+    }
+
+    private Section _section = new()
+    {
+        Type = "Channel X-Section"
+    };
+
+    private List<XData> _points = new();
+    private List<string> _fromItems = new();
+
+    private XData _draftPoint = new()
+    {
+        Point = 1,
+        FromItemNumber = "1",
+        HDist = null,
+        VDist = null,
+        VAdjustment = false,
+        Description = string.Empty
+    };
+
+    private int? _editingPointIndex = null;
+    private string? _statusMessage;
+    private bool _allowSaveWithReorderWarning = false;
+
+    private string? DraftKey =>
+    string.IsNullOrWhiteSpace(ProjectState.OriginalCbzFileName)
+        ? null
+        : $"cross-section-draft::{ProjectState.OriginalCbzFileName}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        ProjectState.OnChange += HandleProjectChanged;
+
+        await EnsureProjectLoadedAsync();
+
+        _showLoadWarning = ProjectState.CurrentProject is null;
+
+        LoadFromItems();
+
+        _points = ProjectState.CrossSectionEditorPoints ?? new List<XData>();
+        ProjectState.CrossSectionEditorPoints = _points;
+
+        await RestoreDraftAsync();
+    }
+    private async Task RestoreDraftAsync()
+    {
+        if (ProjectState.CurrentProject is null || string.IsNullOrWhiteSpace(ProjectState.OriginalCbzFileName))
+            return;
+
+        if (string.IsNullOrWhiteSpace(DraftKey))
+            return;
+
+        if (_restoringDraft)
+            return;
+
+        _restoringDraft = true;
+
+        try
+        {
+            var draft = await DraftStorage.LoadAsync<CrossSectionDraft>(DraftKey);
+            if (draft is null)
+                return;
+
+            _suppressAutosave = true;
+            try
+            {
+                if (draft.Section != null)
+                    _section = draft.Section;
+
+                _points = draft.Points ?? new List<XData>();
+                ProjectState.CrossSectionEditorPoints = _points;
+
+                _draftPoint = draft.CurrentPointDraft ?? new XData
+                {
+                    Point = _points.Count + 1,
+                    FromItemNumber = _fromItems.FirstOrDefault() ?? "1",
+                    HDist = null,
+                    VDist = null,
+                    VAdjustment = false,
+                    Description = string.Empty
+                };
+
+                _editingPointIndex = null;
+                _allowSaveWithReorderWarning = false;
+                _statusMessage = $"Restored unsaved draft from {draft.SavedAtUtc.ToLocalTime():g}.";
+
+                ProjectState.NotifyStateChanged();
+            }
+            finally
+            {
+                _suppressAutosave = false;
+            }
+        }
+        catch
+        {
+            await ClearSavedDraftAsync();
+        }
+        finally
+        {
+            _restoringDraft = false;
+        }
+    }
+    
+
+    private void HandleProjectChanged()
+    {
+        _showLoadWarning = ProjectState.CurrentProject is null;
+        LoadFromItems();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void LoadFromItems()
+    {
+        _fromItems = ProjectState.CurrentProject?.Substructures?
+            .Select(s => !string.IsNullOrWhiteSpace(s.ItemNumber)
+                ? s.ItemNumber!
+                : (s.ItemIndex + 1).ToString())
+            .Distinct()
+            .ToList()
+            ?? new List<string>();
+
+        if (_fromItems.Count == 0)
+            _fromItems.Add("1");
+
+        if (string.IsNullOrWhiteSpace(_draftPoint.FromItemNumber))
+            _draftPoint.FromItemNumber = _fromItems[0];
+    }
+
+    private async Task AutoSaveDraftAsync()
+    {
+        if (_suppressAutosave)
+            return;
+
+        if (ProjectState.CurrentProject is null || string.IsNullOrWhiteSpace(ProjectState.OriginalCbzFileName))
+            return;
+
+        if (string.IsNullOrWhiteSpace(DraftKey))
+            return;
+
+        var draft = new CrossSectionDraft
+        {
+            ProjectFileName = ProjectState.OriginalCbzFileName,
+            SavedAtUtc = DateTime.UtcNow,
+            Section = _section,
+            Points = _points.ToList(),
+            CurrentPointDraft = _draftPoint
+        };
+
+        await DraftStorage.SaveAsync(DraftKey, draft);
+    }
+
+    private async Task ClearSavedDraftAsync()
+    {
+        if (string.IsNullOrWhiteSpace(DraftKey))
+            return;
+
+        await DraftStorage.RemoveAsync(DraftKey);
+    }
+
+    private async Task AddOrUpdatePoint()
+    {
+        var next = BuildComputedPoint(_draftPoint);
+
+        if (_editingPointIndex.HasValue)
+        {
+            _points[_editingPointIndex.Value] = next;
+            _editingPointIndex = null;
+            _statusMessage = $"Point {next.Point} updated.";
+        }
+        else
+        {
+            _points.Add(next);
+            _statusMessage = $"Point {next.Point} added.";
+        }
+
+        RenumberPoints();
+
+        ProjectState.CrossSectionEditorPoints = _points;
+        ProjectState.NotifyStateChanged();
+
+        ResetDraftPoint(keepFromItem: true);
+        _allowSaveWithReorderWarning = false;
+
+        await AutoSaveDraftAsync();
+
+        _focusVerticalDistance = false;
+        _focusHorizontalDistance = false;
+        await InvokeAsync(StateHasChanged);
+
+        _focusHorizontalDistance = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task EditPoint(int index)
+    {
+        if (index >= 0 && index < _points.Count)
+        {
+            var p = _points[index];
+
+            _draftPoint = new XData
+            {
+                Point = p.Point,
+                FromItemNumber = p.FromItemNumber,
+                HDist = p.HDist,
+                VDist = p.VDist,
+                VAdjustment = p.VAdjustment,
+                Description = p.Description
+            };
+
+            _focusHorizontalDistance = true;
+            _focusVerticalDistance = false;
+            _editingPointIndex = index;
+            _statusMessage = $"Editing point {p.Point}.";
+
+            await AutoSaveDraftAsync();
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task DeletePointAsync(int index)
+    {
+        if (index < 0 || index >= _points.Count)
+            return;
+
+        var deletedPointNo = _points[index].Point;
+        _points.RemoveAt(index);
+
+        if (_editingPointIndex == index)
+        {
+            _editingPointIndex = null;
+            ResetDraftPoint(keepFromItem: true);
+        }
+        else if (_editingPointIndex.HasValue && _editingPointIndex.Value > index)
+        {
+            _editingPointIndex--;
+        }
+
+        _allowSaveWithReorderWarning = false;
+
+        RenumberPoints();
+
+        ProjectState.CrossSectionEditorPoints = _points;
+        ProjectState.NotifyStateChanged();
+
+        _statusMessage = $"Point {deletedPointNo} deleted.";
+
+        await AutoSaveDraftAsync();
+        StateHasChanged();
+    }
+
+    private async Task CancelEdit()
+    {
+        _editingPointIndex = null;
+        _allowSaveWithReorderWarning = false;
+        ResetDraftPoint(keepFromItem: true);
+        _statusMessage = "Edit cancelled.";
+
+        await AutoSaveDraftAsync();
+
+        _focusVerticalDistance = false;
+        _focusHorizontalDistance = false;
+        await InvokeAsync(StateHasChanged);
+
+        _focusHorizontalDistance = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveCrossSectionAsync()
+    {
+        var project = ProjectState.CurrentProject;
+
+        if (project is null)
+        {
+            _statusMessage = "No current project loaded.";
+            _allowSaveWithReorderWarning = false;
+            return;
+        }
+
+        var recomputedPoints = _points
+            .Select(BuildComputedPoint)
+            .ToList();
+
+        _section.Data = recomputedPoints;
+
+        var validationErrors = _section.Validate();
+        if (validationErrors.Any())
+        {
+            _statusMessage = string.Join(" ", validationErrors);
+            _allowSaveWithReorderWarning = false;
+            await AutoSaveDraftAsync();
+            return;
+        }
+
+        if (HasDuplicateCrossSectionDate(project, _section.Date))
+        {
+            _statusMessage = $"A cross-section with date {_section.Date} already exists. Change the date before saving.";
+            _allowSaveWithReorderWarning = false;
+            await AutoSaveDraftAsync();
+            return;
+        }
+
+        if (!_section.ArePointsInAscendingStationOrder() && !_allowSaveWithReorderWarning)
+        {
+            var stationList = string.Join(", ",
+                _section.Data.Select(p => $"{p.Point}:{p.StationString}"));
+
+            _statusMessage = $"Points are not in ascending station order. Current order is {stationList}. Click Save Cross-Section again to continue and automatically reorder the points.";
+            _allowSaveWithReorderWarning = true;
+            await AutoSaveDraftAsync();
+            return;
+        }
+
+        _points = _section.Data
+            .OrderBy(p => p.Station)
+            .ToList();
+
+        _section.Data = _points;
+        _section.RenumberPoints();
+
+        ProjectState.CrossSectionEditorPoints = _points;
+
+        var sectionToSave = CloneSectionWithPoints();
+
+        bool isUpdatingExisting =
+            _loadedCrossSectionIndex.HasValue &&
+            _loadedCrossSectionIndex.Value >= 0 &&
+            _loadedCrossSectionIndex.Value < project.CrossSections.Count;
+
+        if (isUpdatingExisting)
+        {
+            project.CrossSections[_loadedCrossSectionIndex!.Value] = sectionToSave;
+            _statusMessage = $"Cross-section updated with {_points.Count} point(s).";
+        }
+        else
+        {
+            project.CrossSections.Add(sectionToSave);
+            _loadedCrossSectionIndex = project.CrossSections.Count - 1;
+            _selectedCrossSectionValue = _loadedCrossSectionIndex.Value.ToString();
+            _statusMessage = $"Cross-section saved with {_points.Count} point(s).";
+        }
+
+        if (!string.IsNullOrWhiteSpace(ProjectState.OriginalCbzText))
+        {
+            string updatedCbzText = isUpdatingExisting
+                ? CbzService.ReplaceAllCrossSections(ProjectState.OriginalCbzText, project.CrossSections)
+                : CbzService.AppendCrossSection(ProjectState.OriginalCbzText, sectionToSave);
+
+            ProjectState.OriginalCbzText = updatedCbzText;
+
+            await JS.InvokeVoidAsync(
+                "projectStorage.saveCbz",
+                ProjectState.OriginalCbzFileName,
+                updatedCbzText);
+        }
+
+        ProjectState.LastSavedCrossSection = sectionToSave;
+        _allowSaveWithReorderWarning = false;
+
+        ProjectState.NotifyStateChanged();
+
+
+        _statusMessage = isUpdatingExisting
+            ? "Cross-section updated."
+            : "Cross-section saved.";
+
+        await ClearSavedDraftAsync();
+        await ClearWorkingSectionInternalAsync(clearBrowserDraft: false);
+
+    }
+
+    
+    private async Task ClearWorkingSectionAsync()
+    {
+        await ClearWorkingSectionInternalAsync(clearBrowserDraft: true);
+    }
+
+    private async Task ClearWorkingSectionInternalAsync(bool clearBrowserDraft)
+    {
+       
+        _section = new Section
+        {
+            Type = "Channel X-Section"
+        };
+
+        _points = new List<XData>();
+        ProjectState.CrossSectionEditorPoints = _points;
+
+        _editingPointIndex = null;
+        _allowSaveWithReorderWarning = false;
+        _loadedCrossSectionIndex = null;
+        _selectedCrossSectionValue = null;
+
+        _draftPoint = new XData
+        {
+            Point = 1,
+            FromItemNumber = _fromItems.FirstOrDefault() ?? "1",
+            HDist = null,
+            VDist = null,
+            VAdjustment = false,
+            Description = string.Empty
+        };
+
+        _focusHorizontalDistance = false;
+        _focusVerticalDistance = false;
+
+        ProjectState.NotifyStateChanged();
+
+        if (clearBrowserDraft)
+        {
+            await ClearSavedDraftAsync();
+            _statusMessage = "Current cross-section cleared.";
+        }
+
+        StateHasChanged();
+    }
+
+    private Section CloneSectionWithPoints()
+    {
+        var copy = new Section
+        {
+            Number = _section.Number,
+            Date = _section.Date,
+            Type = _section.Type,
+            Comments = _section.Comments,
+            Collector = _section.Collector,
+            RefFace = _section.RefFace,
+            VertOffset = _section.VertOffset,
+            VertAdjustment = _section.VertAdjustment,
+            RefConstantVertical = _section.RefConstantVertical,
+            RefConstantVerticalElevation = _section.RefConstantVerticalElevation,
+            Data = new List<XData>()
+        };
+
+        foreach (var p in _points)
+        {
+            copy.Data.Add(new XData
+            {
+                Point = p.Point,
+                FromItem = p.FromItem,
+                FromItemNumber = p.FromItemNumber,
+                HDist = p.HDist,
+                VDist = p.VDist,
+                VAdjustment = p.VAdjustment,
+                Description = p.Description,
+                Station = p.Station,
+                StationString = p.StationString,
+                Elevation = p.Elevation,
+                ElevationString = p.ElevationString
+            });
+        }
+
+        return copy;
+    }
+
+    private void RenumberPoints()
+    {
+        for (int i = 0; i < _points.Count; i++)
+        {
+            _points[i].Point = i + 1;
+        }
+    }
+
+    private void ResetDraftPoint(bool keepFromItem)
+    {
+        var fromItem = keepFromItem
+            ? _draftPoint.FromItemNumber
+            : (_fromItems.FirstOrDefault() ?? "1");
+
+        var vAdj = _draftPoint.VAdjustment;
+
+        _draftPoint = new XData
+        {
+            Point = _points.Count + 1,
+            FromItemNumber = fromItem,
+            HDist = null,
+            VDist = null,
+            VAdjustment = vAdj,
+            Description = string.Empty
+        };
+    }
+
+    public void Dispose()
+    {
+        ProjectState.OnChange -= HandleProjectChanged;
+    }
+
+    private XData BuildComputedPoint(XData draft)
+    {
+        var result = new XData
+        {
+            Point = draft.Point,
+            FromItem = draft.FromItem,
+            FromItemNumber = draft.FromItemNumber,
+            HDist = draft.HDist,
+            VDist = draft.VDist,
+            Description = draft.Description
+        };
+
+        var project = ProjectState.CurrentProject;
+        if (project is null)
+            return result;
+
+        var subItemIndex = project.Substructures?
+            .FindIndex(s => s.ItemNumber == draft.FromItemNumber) ?? -1;
+
+        if (subItemIndex >= 0)
+            result.FromItem = subItemIndex;
+
+        var subItem = subItemIndex >= 0
+            ? project.Substructures![subItemIndex]
+            : null;
+
+        if (subItem is null || !subItem.Station.HasValue)
+            return result;
+
+        double hDist = draft.HDist ?? 0.0;
+        double vDist = draft.VDist ?? 0.0;
+
+        var station = DeckElevationEvaluator.GetCrossSectionStation(
+            subItem,
+            _section.RefFace,
+            hDist);
+        double? pointElevation = null;
+
+        for (var i = 0; i < 3; i++)
+        {
+            station = DeckElevationEvaluator.GetCrossSectionStation(
+                subItem,
+                _section.RefFace,
+                hDist,
+                pointElevation);
+
+            var deckEdgeElevation = ComputeDeckEdgeElevation(project, _section, station);
+            if (!deckEdgeElevation.HasValue)
+                break;
+
+            pointElevation = deckEdgeElevation.Value
+                             + _section.VertOffset
+                             - vDist
+                             - (draft.VAdjustment ? _section.VertAdjustment : 0.0);
+        }
+
+        result.Station = station;
+        result.StationString = Stationing.ToString(station);
+
+        if (pointElevation.HasValue)
+        {
+            result.Elevation = pointElevation.Value;
+            result.ElevationString = pointElevation.Value.ToString("F2");
+        }
+
+        result.VAdjustment = draft.VAdjustment;
+
+        return result;
+    }
+
+    private double? ParseNullableDouble(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s))
+            return null;
+
+        if (double.TryParse(s, out var d))
+            return d;
+
+        return null;
+    }
+
+    private double? ComputeDeckEdgeElevation(BreaseProject project, Section section, double station)
+    {
+        if (project.VerticalAlignment == null || project.VerticalAlignment.Count == 0)
+            return null;
+
+        double centerlineElevation =
+            VerticalAlignmentEvaluator.GetCenterLineElevation(project.VerticalAlignment, station);
+
+        double crossSlopeHDist = project.CrossSlopeHorizontalDistance;
+        double crossSlope = CrossSlopeEvaluator.GetSlope(
+            project.ConstantCrossSlope,
+            project.VaryingCrossSlopes,
+            station);
+
+        double edgeDeckElevation = centerlineElevation + crossSlope * crossSlopeHDist;
+
+        return edgeDeckElevation;
+    }
+
+    private bool HasDuplicateCrossSectionDate(BreaseProject project, string dateToCheck)
+    {
+        if (project.CrossSections is null || string.IsNullOrWhiteSpace(dateToCheck))
+            return false;
+
+        for (int i = 0; i < project.CrossSections.Count; i++)
+        {
+            if (_loadedCrossSectionIndex.HasValue && i == _loadedCrossSectionIndex.Value)
+                continue;
+
+            var xs = project.CrossSections[i];
+
+            if (string.IsNullOrWhiteSpace(xs.Date))
+                continue;
+
+            if (DatesMatch(xs.Date, dateToCheck))
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool DatesMatch(string date1, string date2)
+    {
+        if (DateTime.TryParse(date1, out var d1) && DateTime.TryParse(date2, out var d2))
+            return d1.Date == d2.Date;
+
+        return string.Equals(date1?.Trim(), date2?.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool ArePointsInAscendingStationOrder(List<XData> points)
+    {
+        if (points is null || points.Count < 2)
+            return true;
+
+        for (int i = 1; i < points.Count; i++)
+        {
+            if (points[i].Station < points[i - 1].Station)
+                return false;
+        }
+
+        return true;
+    }
+
+    private bool ArePointsInConsistentStationOrder(List<XData> points)
+    {
+        if (points is null || points.Count < 2)
+            return true;
+
+        var stations = points
+            .Select(p => p.Station)
+            .ToList();
+
+        if (stations.Count < 2)
+            return true;
+
+        bool ascending = true;
+        bool descending = true;
+
+        for (int i = 1; i < stations.Count; i++)
+        {
+            if (stations[i] < stations[i - 1])
+                ascending = false;
+
+            if (stations[i] > stations[i - 1])
+                descending = false;
+        }
+
+        return ascending || descending;
+    }
+
+    private void ReorderPointsByAscendingStation()
+    {
+        _points = _points
+            .OrderBy(p => p.Station)
+            .ToList();
+
+        RenumberPoints();
+
+        ProjectState.CrossSectionEditorPoints = _points;
+    }
+
+    private async Task ExportUpdatedCbzAsync()
+    {
+        ExportMessage = null;
+        ExportError = null;
+
+        try
+        {
+            var project = ProjectState.CurrentProject;
+            var originalCbzText = ProjectState.OriginalCbzText;
+
+            if (project is null)
+            {
+                ExportError = "No CBZ project is loaded.";
+                return;
+            }
+
+            if (_section is null)
+            {
+                ExportError = "No working cross-section is available.";
+                return;
+            }
+
+            if (_points is null || _points.Count == 0)
+            {
+                ExportError = "There are no points to export in the working cross-section.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(originalCbzText))
+            {
+                ExportError = "Original CBZ text is not available.";
+                return;
+            }
+
+            var newSection = new Section
+            {
+                Date = _section.Date,
+                Type = _section.Type,
+                Comments = _section.Comments ?? string.Empty,
+                Collector = _section.Collector ?? string.Empty,
+                VertOffset = _section.VertOffset,
+                VertAdjustment = _section.VertAdjustment,
+                RefFace = _section.RefFace,
+                RefConstantVertical = _section.RefConstantVertical,
+                RefConstantVerticalElevation = _section.RefConstantVerticalElevation,
+                Data = _points.Select(BuildComputedPoint).Select(p => new XData
+                {
+                    Point = p.Point,
+                    FromItem = p.FromItem,
+                    HDist = p.HDist,
+                    VDist = p.VDist,
+                    VAdjustment = p.VAdjustment,
+                    Description = p.Description ?? string.Empty,
+                    Station = p.Station,
+                    StationString = p.StationString,
+                    ElevationString = p.ElevationString,
+                    FromItemNumber = p.FromItemNumber
+                }).ToList()
+            };
+
+            string updatedCbzText;
+
+            bool isUpdatingExisting =
+                _loadedCrossSectionIndex.HasValue &&
+                _loadedCrossSectionIndex.Value >= 0 &&
+                _loadedCrossSectionIndex.Value < project.CrossSections.Count;
+
+            if (isUpdatingExisting)
+            {
+                var tempSections = project.CrossSections
+                    .Select(s => CloneSectionForExport(s))
+                    .ToList();
+
+                tempSections[_loadedCrossSectionIndex!.Value] = newSection;
+
+                updatedCbzText = CbzService.ReplaceAllCrossSections(originalCbzText, tempSections);
+            }
+            else
+            {
+                updatedCbzText = CbzService.AppendCrossSection(originalCbzText, newSection);
+            }
+
+            string fileName;
+
+            if (!string.IsNullOrWhiteSpace(ProjectState.OriginalCbzFileName))
+            {
+                fileName = Path.GetFileNameWithoutExtension(ProjectState.OriginalCbzFileName) + "_updated.cbz";
+            }
+            else if (!string.IsNullOrWhiteSpace(project.BridgeId))
+            {
+                fileName = $"{project.BridgeId}_updated.cbz";
+            }
+            else
+            {
+                fileName = "updated.cbz";
+            }
+
+            await JS.InvokeVoidAsync(
+                "downloadFileFromText",
+                fileName,
+                "text/plain",
+                updatedCbzText);
+
+            ExportMessage = $"Exported {fileName}";
+        }
+        catch (Exception ex)
+        {
+            ExportError = ex.Message;
+        }
+    }
+
+    private Section CloneSectionForExport(Section source)
+    {
+        return new Section
+        {
+            Number = source.Number,
+            Date = source.Date,
+            Type = source.Type,
+            Comments = source.Comments,
+            Collector = source.Collector,
+            VertOffset = source.VertOffset,
+            VertAdjustment = source.VertAdjustment,
+            RefFace = source.RefFace,
+            RefConstantVertical = source.RefConstantVertical,
+            RefConstantVerticalElevation = source.RefConstantVerticalElevation,
+            Data = source.Data?.Select(p => new XData
+            {
+                Point = p.Point,
+                FromItem = p.FromItem,
+                FromItemNumber = p.FromItemNumber,
+                HDist = p.HDist,
+                VDist = p.VDist,
+                VAdjustment = p.VAdjustment,
+                Description = p.Description,
+                Station = p.Station,
+                StationString = p.StationString,
+                Elevation = p.Elevation,
+                ElevationString = p.ElevationString
+            }).ToList() ?? new List<XData>()
+        };
+    }
+
+    private async Task HandleVerticalAdjustmentChanged(bool isChecked)
+    {
+        _focusHorizontalDistance = false;
+        _focusVerticalDistance = false;
+
+        await InvokeAsync(StateHasChanged);
+
+        if (isChecked)
+        {
+            _focusVerticalDistance = true;
+        }
+        else
+        {
+            _focusHorizontalDistance = true;
+        }
+
+        await AutoSaveDraftAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+    private bool _showLoadWarning;
+    private async Task EnsureProjectLoadedAsync()
+    {
+        if (ProjectState.CurrentProject != null)
+            return;
+
+        string? savedFileName = null;
+        string? savedCbzText = null;
+
+        try
+        {
+            savedFileName = await JS.InvokeAsync<string>("projectStorage.getCbzFileName");
+            savedCbzText = await JS.InvokeAsync<string>("projectStorage.getCbzText");
+        }
+        catch
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(savedCbzText))
+            return;
+
+        try
+        {
+            using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(savedCbzText));
+            ms.Position = 0;
+
+            var restoredProject = ProjectLoader.LoadFromStream(
+                ms,
+                string.IsNullOrWhiteSpace(savedFileName) ? "RestoredProject.cbz" : savedFileName);
+
+            ProjectState.OriginalCbzFileName = savedFileName;
+            ProjectState.OriginalCbzText = savedCbzText;
+            ProjectState.CurrentProject = restoredProject;
+
+            _showLoadWarning = restoredProject is null;
+
+            ProjectState.NotifyStateChanged();
+        }
+        catch
+        {
+            await JS.InvokeVoidAsync("projectStorage.clearCbz");
+
+            ProjectState.OriginalCbzFileName = null;
+            ProjectState.OriginalCbzText = null;
+            ProjectState.CurrentProject = null;
+
+            _showLoadWarning = true;
+
+            ProjectState.NotifyStateChanged();
+        }
+    }
+}

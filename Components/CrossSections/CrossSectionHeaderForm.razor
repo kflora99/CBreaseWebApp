@@ -1,0 +1,184 @@
+﻿@using Brease.Core.Models
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Forms
+@using System.Globalization
+
+<div class="card mb-3">
+    <div class="card-header">
+        <strong>Cross-Section Header</strong>
+    </div>
+
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-12 col-md-6">
+                <label class="form-label">Date</label>
+                <InputDate TValue="DateTime?" class="form-control"
+                           Value="@SectionDateValue"
+                           ValueChanged="@(async (DateTime? value) => await OnDateChanged(value))"
+                           ValueExpression="() => SectionDateValue" />
+            </div>
+
+            <div class="col-12 col-md-6">
+                <label class="form-label">Type</label>
+                <InputSelect TValue="string" class="form-select"
+                             Value="@Section.Type"
+                             ValueChanged="@(async (string value) => await OnTypeChanged(value))"
+                             ValueExpression="() => Section.Type">
+                    <option value="Channel X-Section">Channel X-Section</option>
+                    <option value="Engineering Plans">Engineering Plans</option>
+                </InputSelect>
+            </div>
+
+            <div class="col-12 col-md-6">
+                <label class="form-label">Collected By</label>
+                <InputText class="form-control"
+                           Value="@Section.Collector"
+                           ValueChanged="@(async (string value) => await OnCollectorChanged(value))"
+                           ValueExpression="() => Section.Collector" />
+            </div>
+
+            <div class="col-12 col-md-6">
+                <label class="form-label">Comments</label>
+                <InputText class="form-control"
+                           Value="@Section.Comments"
+                           ValueChanged="@(async (string value) => await OnCommentsChanged(value))"
+                           ValueExpression="() => Section.Comments" />
+            </div>
+
+            <div class="col-12 col-md-6">
+                <label class="form-label">Vertical Offset</label>
+                <InputNumber TValue="double?" class="form-control"
+                             Value="@VertOffsetInput"
+                             ValueChanged="@(async (double? value) => await OnVertOffsetChanged(value))"
+                             ValueExpression="() => VertOffsetInput" />
+            </div>
+
+            <div class="col-12 col-md-6">
+                <label class="form-label">Vertical Adjustment</label>
+                <InputNumber TValue="double?" class="form-control"
+                             Value="@VertAdjustmentInput"
+                             ValueChanged="@(async (double? value) => await OnVertAdjustmentChanged(value))"
+                             ValueExpression="() => VertAdjustmentInput" />
+            </div>
+
+            <div class="col-12">
+                <div class="form-check mb-2">
+                    <InputCheckbox class="form-check-input"
+                                   Value="@Section.RefFace"
+                                   ValueChanged="@(async (bool value) => await OnRefFaceChanged(value))"
+                                   ValueExpression="() => Section.RefFace" />
+                    <label class="form-check-label">
+                        Reference Face of Bridge Item
+                    </label>
+                </div>
+
+                <div class="form-check mb-2">
+                    <InputCheckbox class="form-check-input"
+                                   Value="@Section.RefConstantVertical"
+                                   ValueChanged="@(async (bool value) => await OnRefConstantVerticalChanged(value))"
+                                   ValueExpression="() => Section.RefConstantVertical" />
+                    <label class="form-check-label">
+                        Use Constant Elevation for Vertical Reference
+                    </label>
+                </div>
+            </div>
+
+            @if (Section.RefConstantVertical)
+            {
+                <div class="col-12 col-md-6">
+                    <label class="form-label">Constant Vertical Elevation</label>
+                    <InputNumber TValue="double?" class="form-control"
+                                 Value="@Section.RefConstantVerticalElevation"
+                                 ValueChanged="@(async (double? value) => await OnRefConstantVerticalElevationChanged(value))"
+                                 ValueExpression="() => Section.RefConstantVerticalElevation" />
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Section Section { get; set; } = new();
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private DateTime? SectionDateValue
+    {
+        get
+        {
+            if (DateTime.TryParse(Section.Date, out var dt))
+                return dt;
+
+            return null;
+        }
+    }
+
+    private async Task NotifyChangedAsync()
+    {
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task OnDateChanged(DateTime? value)
+    {
+        Section.Date = value?.ToString("M/d/yyyy", CultureInfo.InvariantCulture) ?? string.Empty;
+        await NotifyChangedAsync();
+    }
+
+    private async Task OnTypeChanged(string value)
+    {
+        Section.Type = value ?? string.Empty;
+        await NotifyChangedAsync();
+    }
+
+    private async Task OnCollectorChanged(string value)
+    {
+        Section.Collector = value ?? string.Empty;
+        await NotifyChangedAsync();
+    }
+
+    private async Task OnCommentsChanged(string value)
+    {
+        Section.Comments = value ?? string.Empty;
+        await NotifyChangedAsync();
+    }
+
+    private async Task OnVertOffsetChanged(double? value)
+    {
+        Section.VertOffset = value ?? 0.0;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task OnVertAdjustmentChanged(double? value)
+    {
+        Section.VertAdjustment = value ?? 0.0;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task OnRefFaceChanged(bool value)
+    {
+        Section.RefFace = value;
+        await NotifyChangedAsync();
+    }
+
+    private async Task OnRefConstantVerticalChanged(bool value)
+    {
+        Section.RefConstantVertical = value;
+        await NotifyChangedAsync();
+    }
+
+    private async Task OnRefConstantVerticalElevationChanged(double? value)
+    {
+        Section.RefConstantVerticalElevation = value;
+        await NotifyChangedAsync();
+    }
+    private double? VertOffsetInput
+    {
+        get => Math.Abs(Section.VertOffset) < 1e-9 ? null : Section.VertOffset;
+        set => Section.VertOffset = value ?? 0.0;
+    }
+
+    private double? VertAdjustmentInput
+    {
+        get => Math.Abs(Section.VertAdjustment) < 1e-9 ? null : Section.VertAdjustment;
+        set => Section.VertAdjustment = value ?? 0.0;
+    }
+}

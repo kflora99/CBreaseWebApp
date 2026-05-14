@@ -1,0 +1,116 @@
+﻿@using Brease.Core.Models
+@using Microsoft.AspNetCore.Components
+
+<div class="card mb-3">
+    <div class="card-header">
+        <strong>Entered Points</strong>
+    </div>
+
+    <div class="card-body">
+        <div class="mb-2">Point count = @Points.Count</div>
+
+        <div class="d-none d-md-block">
+            <div class="points-table-scroll">
+                <table class="table table-sm table-striped table-bordered custom-xs-table entered-points-table mb-0">
+                    <thead>
+                        <tr>
+                            <th>Point</th>
+                            <th>From Item</th>
+                            <th>H Dist</th>
+                            <th>V Dist</th>
+                            <th>Station</th>
+                            <th>Elevation</th>
+                            <th>V Adj</th>
+                            <th>Description</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (int i = 0; i < Points.Count; i++)
+                        {
+                            var p = Points[i];
+                            <tr>
+                                <td>@p.Point</td>
+                                <td>@p.FromItemNumber</td>
+                                <td>@p.HDist</td>
+                                <td>@p.VDist</td>
+                                <td>@p.StationString</td>
+                                <td>@p.ElevationString</td>
+                                <td>@(p.VAdjustment ? "Yes" : "No")</td>
+                                <td>@p.Description</td>
+                                <td>
+                                    @{
+                                        var rowIndex = i;
+                                    }
+
+                                    <div class="actions-cell">
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-primary"
+                                                @onclick="@(() => OnEditPoint.InvokeAsync(rowIndex))">
+                                            Edit
+                                        </button>
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-danger"
+                                                @onclick="@(() => OnDeletePoint.InvokeAsync(rowIndex))">
+                                            Delete
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="d-block d-md-none">
+            @for (int i = 0; i < Points.Count; i++)
+            {
+                var p = Points[i];
+                var rowIndex = i;
+                <div class="card mb-2 point-card-mobile">
+                    <div class="card-body py-2">
+                        <div class="row">
+                            <div class="col-6"><strong>Point:</strong> @p.Point</div>
+                            <div class="col-6"><strong>From:</strong> @p.FromItemNumber</div>
+                            <div class="col-6"><strong>H Dist:</strong> @p.HDist</div>
+                            <div class="col-6"><strong>V Dist:</strong> @p.VDist</div>
+                            <div class="col-6"><strong>Station:</strong> @p.StationString</div>
+                            <div class="col-6"><strong>Elev:</strong> @p.ElevationString</div>
+                            <div class="col-6"><strong>V Adj:</strong> @(p.VAdjustment ? "Yes" : "No")</div>
+                            <div class="col-12"><strong>Description:</strong> @p.Description</div>
+                        </div>
+
+                        <div class="d-grid gap-2 mt-2">
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-primary"
+                                    @onclick="@(() => OnEditPoint.InvokeAsync(rowIndex))">
+                                Edit
+                            </button>
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-danger"
+                                    @onclick="@(() => OnDeletePoint.InvokeAsync(rowIndex))">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+@code {
+    [Parameter] public List<XData> Points { get; set; } = new();
+    [Parameter] public EventCallback<int> OnEditPoint { get; set; }
+    [Parameter] public EventCallback<int> OnDeletePoint { get; set; }
+
+    private async Task EditPoint(int index)
+    {
+        await OnEditPoint.InvokeAsync(index);
+    }
+
+    private async Task DeletePoint(int index)
+    {
+        await OnDeletePoint.InvokeAsync(index);
+    }
+}

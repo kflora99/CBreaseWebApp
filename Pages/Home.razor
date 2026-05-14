@@ -1,0 +1,1180 @@
+﻿@page "/"
+@page "/cbz-test"
+@using System.IO
+@using Brease.Core
+@using Brease.Core.Models
+@using Brease.Core.Utilities
+@using Microsoft.AspNetCore.Components.Forms
+@using Brease.Core.Geometry
+@using CBreaseWebApp1.Services
+@inject ProjectState ProjectState
+@inject IJSRuntime JS
+@inject DraftStorageService DraftStorage
+
+@inject IBreaseProjectLoader ProjectLoader
+
+@if (project is not null)
+{
+    <h3 class="mb-3">
+        <strong>Br. No.</strong> @project.BridgeId
+        &nbsp; - &nbsp;
+        @project.ProjectName
+        &nbsp; - &nbsp;
+        @project.Location
+    </h3>
+}
+else
+{
+    <h3>CBrease Field Data Collector </h3>
+}
+
+<p>
+    Select a CBrease file (<code>*.cbz</code>) and the app will parse it and show a quick summary below.
+</p>
+
+<div class="mb-2 file-picker-row">
+    <label for="cbzFileInput" class="btn btn-outline-secondary mb-0">Choose File</label>
+    <InputFile id="cbzFileInput" OnChange="OnFileChange" accept=".cbz" class="hidden-file-input" />
+
+    @if (!string.IsNullOrWhiteSpace(selectedFileName))
+    {
+        <span class="ms-2">@selectedFileName</span>
+    }
+</div>
+
+
+@if (!string.IsNullOrEmpty(status))
+{
+    <p>@status</p>
+}
+
+@if (project is not null)
+{
+    <div class="section-box">
+        <h4>Project Summary</h4>
+
+        <div class="row g-1 mb-3">
+
+            <div class="col-md-6"><strong>Bridge ID:</strong> @Display(project.BridgeId)</div>
+            <div class="col-md-6"><strong>Unit System:</strong> @Display(project.UnitSystem)</div>
+
+            <div class="col-md-6"><strong>Bridge Name:</strong> @Display(project.ProjectName)</div>
+            <div class="col-md-6"><strong>Original User:</strong> @Display(project.OriginalUser)</div>
+
+            <div class="col-md-6"><strong>Location:</strong> @Display(project.Location)</div>
+            <div class="col-md-6"><strong>Current User:</strong> @Display(project.CurrentUser)</div>
+
+            <div class="col-md-6"><strong>X-Section Side:</strong> @Display(project.XSectionSide)</div>
+
+        </div>
+    </div>
+
+    @* ---------------- SUBSTRUCTURES ---------------- *@
+    @if (project.Substructures is { Count: > 0 })
+    {
+        <div class="section-box">
+            <h4 class="mt-4">Substructure Details</h4>
+            @for (var si = 0; si < project.Substructures.Count; si++)
+            {
+                var sub = project.Substructures[si];
+                var geom = SubstructureGeometryEvaluator.Compute(project, sub);
+
+                <details class="mb-3">
+                    <summary>
+                        <strong>@(si + 1).</strong>
+                        @sub.Name — Station @sub.StationString (Foundation: @sub.FoundationType)
+                    </summary>
+
+                    <div class="mt-2 mb-3">
+                        @SubstructureSvg(sub, geom)
+                    </div>
+
+                    <table class="table table-sm mt-2">
+                        <tbody>
+                            <tr><th style="width:220px">Item #</th><td>@sub.ItemNumber</td></tr>
+                            <tr><th>Bridge Skew</th><td>@sub.BridgeSkew</td></tr>
+                            <tr><th>Edge of Deck Station</th><td>@Stationing.ToString(geom.CenterEvaluationStation, 2)</td></tr>
+                            @if (sub.ColumnBottomElevation.HasValue)
+                            {
+                                <tr><th>Column Bottom Elev</th><td>@sub.ColumnBottomElevation.Value.ToString("0.##")</td></tr>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(sub.ColumnTopWidth))
+                            {
+                                <tr><th>Column Top Width</th><td>@sub.ColumnTopWidth</td></tr>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(sub.ColumnBottomWidth))
+                            {
+                                <tr><th>Column Bottom Width</th><td>@sub.ColumnBottomWidth</td></tr>
+                            }
+
+                            @if (sub.FootingTopElevation.HasValue)
+                            {
+                                <tr><th>Footing Top Elev</th><td>@sub.FootingTopElevation.Value.ToString("0.##")</td></tr>
+                            }
+
+                            @if (sub.FootingBottomElevation.HasValue)
+                            {
+                                <tr><th>Footing Bottom Elev</th><td>@sub.FootingBottomElevation.Value.ToString("0.##")</td></tr>
+                            }
+
+                            @if (sub.FootingThickness.HasValue)
+                            {
+                                <tr><th>Footing Thickness</th><td>@sub.FootingThickness.Value.ToString("0.##")</td></tr>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(sub.FootingWidth))
+                            {
+                                <tr><th>Footing Width</th><td>@sub.FootingWidth</td></tr>
+                            }
+                            @if (sub.TremieSealBottomElevation.HasValue)
+                            {
+                                <tr><th>Tremie Seal Bottom Elev</th><td>@sub.TremieSealBottomElevation.Value.ToString("0.##")</td></tr>
+                            }
+
+                            @if (sub.TremieSealThickness.HasValue)
+                            {
+                                <tr><th>Tremie Seal Thickness</th><td>@sub.TremieSealThickness.Value.ToString("0.##")</td></tr>
+                            }
+
+                            @if (sub.ItemBottomElevation.HasValue)
+                            {
+                                <tr><th>Item Bottom Elev</th><td>@sub.ItemBottomElevation.Value.ToString("0.##")</td></tr>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(sub.PileNumber))
+                            {
+                                <tr><th>Number of Piles</th><td>@sub.PileNumber</td></tr>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(sub.PileSpacing))
+                            {
+                                <tr><th>Pile Spacing</th><td>@sub.PileSpacing</td></tr>
+                            }
+
+                            @if (sub.PileTopElevation.HasValue)
+                            {
+                                <tr><th>Pile Top Elev</th><td>@sub.PileTopElevation.Value.ToString("0.##")</td></tr>
+                            }
+
+                            @if (sub.PileTipElevation.HasValue)
+                            {
+                                <tr><th>Pile Tip Elev</th><td>@sub.PileTipElevation.Value.ToString("0.##")</td></tr>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(sub.PileWidth))
+                            {
+                                <tr><th>Pile Width</th><td>@sub.PileWidth</td></tr>
+                            }
+
+                            @if (sub.TremieSealTopElevation.HasValue)
+                            {
+                                <tr><th>Tremie Seal Top Elev</th><td>@sub.TremieSealTopElevation.Value.ToString("0.##")</td></tr>
+                            }
+
+                            <tr><th>VSD Left</th><td>@sub.VsdLeft</td></tr>
+                            <tr><th>VSD Right</th><td>@sub.VsdRight</td></tr>
+
+                            <tr><th>Center Soffit Elev</th><td>@geom.SoffitCenterElevation.ToString("0.##")</td></tr>
+                           
+                        </tbody>
+                    </table>
+                </details>
+            }
+        </div>
+    }
+    @* ---------------- CROSS-SECTIONS ---------------- *@
+    @if (project.CrossSections is { Count: > 0 })
+    {
+        <div class="section-box">
+            <h4 class="mt-4">Historic Cross-Sections</h4>
+
+            @for (var csIndex = 0; csIndex < project.CrossSections.Count; csIndex++)
+            {
+                var xsec = project.CrossSections[csIndex];
+
+                <details class="mb-3">
+                    <summary>
+                        <strong>@(csIndex + 1).</strong>
+                        @xsec.Type
+                        @if (!string.IsNullOrWhiteSpace(xsec.Date))
+                        {
+                            <span> — @xsec.Date</span>
+                        }
+                        <span> (Points: @(xsec.Data?.Count ?? 0))</span>
+                    </summary>
+
+                    @if (xsec.Data is null || xsec.Data.Count == 0)
+                    {
+                        <div class="text-muted mt-2">No point data for this cross-section.</div>
+                    }
+                    else
+                    {
+                        <table class="table table-sm mt-2">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>From</th>
+                                    <th>HDist</th>
+                                    <th>VDist</th>
+                                    <th>Station</th>
+                                    <th>Elevation</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var p in xsec.Data)
+                                {
+                                    <tr>
+                                        <td>@p.Point</td>
+                                        <td>@(p.FromItemNumber ?? p.FromItem.ToString())</td>
+                                        <td>@p.HDist</td>
+                                        <td>@p.VDist</td>
+
+                                        @* Force + stationing formatting *@
+                                        <td>@Stationing.ToString(p.Station, 2)</td>
+
+                                        @* Elevation is plain numeric (leave as-is unless you want a specific format) *@
+                                        <td>@p.Elevation.ToString("F2")</td>
+
+                                        <td>@p.Description</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </details>
+            }
+        </div>
+    }
+    @* ---------------- LOTB ---------------- *@
+    @if (project.LotbLogs is { Count: > 0 })
+    {
+        <h3>LOTB Logs</h3>
+
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Station</th>
+                    <th>Layers</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < project.LotbLogs.Count; i++)
+                {
+                    var lotb = project.LotbLogs[i];
+                    <tr>
+                        <td>@(i + 1)</td>
+                        <td>@lotb.Name</td>
+                        <td>@lotb.Description</td>
+                        <td>@Stationing.ToString(lotb.Station, 2)</td>
+                        <td>@(lotb.Layers?.Count ?? 0)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <h4 class="mt-4">LOTB Details</h4>
+        @for (var li = 0; li < project.LotbLogs.Count; li++)
+        {
+            var lotb = project.LotbLogs[li];
+
+            <details class="mb-3">
+                <summary>
+                    <strong>@(li + 1).</strong>
+                    @lotb.Name
+                    <span> — Station @Stationing.ToString(lotb.Station, 2)</span>
+                    <span> (Layers: @(lotb.Layers?.Count ?? 0))</span>
+                </summary>
+
+                <div class="mt-2">
+                    <div><strong>Description:</strong> @lotb.Description</div>
+
+                    @if (lotb.Layers is null || lotb.Layers.Count == 0)
+                    {
+                        <div class="text-muted mt-2">No layer rows.</div>
+                    }
+                    else
+                    {
+                        <table class="table table-sm mt-2">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Top Elev</th>
+                                    <th>Bottom Elev</th>
+                                    <th>Material</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (var r = 0; r < lotb.Layers.Count; r++)
+                                {
+                                    var layer = lotb.Layers[r];
+                                    <tr>
+                                        <td>@(r + 1)</td>
+                                        <td>@layer.TopElev</td>
+                                        <td>@layer.BotElev</td>
+                                        <td>@layer.MaterialKey</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </details>
+        }
+    }
+    @* ---------------- SUPERSTRUCTURE / VERTICAL ALIGNMENT  ---------------- *@
+    @if ((project.VerticalAlignment is { Count: > 0 }) || (project.VsdTemplates is { Count: > 0 }))
+    {
+        <div class="section-box">
+            <h3>Superstructure / Vertical Alignment</h3>
+
+            <div class="superstructure-section">
+
+                @if (project.VerticalAlignment is { Count: > 0 })
+                {
+                    var edgeSta = 28250.0;
+                    var edgeElev = Brease.Core.Geometry.DeckElevationEvaluator.GetEdgeElevation(
+                    project.VerticalAlignment,
+                    project.ConstantCrossSlope,
+                    project.VaryingCrossSlopes,
+                    project?.CrossSlopeHorizontalDistance ?? 0.0,
+                    edgeSta);
+
+                    var soffitSta = edgeSta;
+                    var structuralDepth = project!.ConstantStructuralDepth ?? 0.0;
+
+                    var soffitElev = Brease.Core.Geometry.DeckElevationEvaluator.GetSoffitElevation(
+                    project.VerticalAlignment,
+                    project.ConstantCrossSlope,
+                    project.VaryingCrossSlopes,
+                    project.CrossSlopeHorizontalDistance,
+                    soffitSta,
+                    structuralDepth);
+
+                    <div class="subsection">
+                        <div class="subsection-title">Cross Slope</div>
+
+                        <div><strong>Reference H-Distance:</strong> @project.CrossSlopeHorizontalDistance.ToString("0.00") ft</div>
+
+                        @if (project.ConstantCrossSlope != null)
+                        {
+                            <div><strong>Cross Slope Type:</strong> Constant</div>
+                            <div><strong>Slope:</strong> @((project.ConstantCrossSlope.Slope * 100.0).ToString("0.00"))%</div>
+                        }
+                        else if (project.VaryingCrossSlopes != null && project.VaryingCrossSlopes.Count > 0)
+                        {
+                            <div><strong>Cross Slope Type:</strong> Varying</div>
+
+                            <table class="table table-sm table-bordered mt-2 cross-slope-table">
+                                <thead>
+                                    <tr>
+                                        <th>Station</th>
+                                        <th>Slope</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var cs in project.VaryingCrossSlopes.OrderBy(x => x.Station))
+                                    {
+                                        <tr>
+                                            <td>@Stationing.ToString(cs.Station, 2)</td>
+                                            <td>@((cs.Slope * 100.0).ToString("0.00"))%</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                        else
+                        {
+                            <div><strong>Cross Slope Type:</strong> None defined</div>
+                        }
+                    </div>
+
+                    <div class="subsection">
+                        <div class="subsection-title">Vertical Profile</div>
+
+                        <div class="table-scroll">
+                            <table class="table table-sm vertical-curve-table">
+                                <thead>
+                                    <tr>
+                                        <th>Type</th>
+                                        <th>Start Station</th>
+                                        <th>End Station</th>
+                                        <th>Details</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var va in project.VerticalAlignment)
+                                    {
+                                        <tr>
+                                            <td>@va.GetType().Name</td>
+                                            <td>@Stationing.ToString(va.StartStation, 2)</td>
+                                            <td>@Stationing.ToString(va.EndStation, 2)</td>
+                                            <td>
+                                                @switch (va)
+                                                {
+                                                    case LevelGrade lg:
+                                                        @($"Elevation = {lg.Elevation:0.##}")
+                                                        break;
+
+                                                    case ConstantGrade cg:
+                                                        @($"Start Elev = {cg.StartElevation:0.##}, Grade = {cg.Grade:0.####}")
+                                                        break;
+
+                                                    case VerticalCurve vc:
+                                                        @($"PVC Elev = {vc.PVCElevation:0.##}, PVC Grade = {vc.PVCGrade:0.####}, PVT Elev = {vc.PVTElevation:0.##}, PVT Grade = {vc.PVTGrade:0.####}")
+                                                        break;
+
+                                                    default:
+                                                        @("Unknown")
+                                                        break;
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+
+                @if (project.VsdTemplates is { Count: > 0 })
+                {
+                    <div class="subsection">
+                        <div class="subsection-title">Variable Structural Depth Templates</div>
+
+                        <div class="mb-2">
+                            <strong>Constant Structural Depth:</strong>
+                            @((project.ConstantStructuralDepth ?? 0.0).ToString("0.###"))<br />
+                            <strong>Number of VSD Templates:</strong>
+                            @project.VsdTemplates.Count
+                        </div>
+
+                        @foreach (var template in project.VsdTemplates)
+                        {
+                            <details class="mb-3">
+                                <summary>
+                                    <strong>@template.NameOfVsd</strong>
+                                    <span> (Key Points: @template.Count)</span>
+                                </summary>
+
+                                @if (template.Count == 0)
+                                {
+                                    <div class="text-muted mt-2">No key points in this template.</div>
+                                }
+                                else
+                                {
+                                    var pts = template.ToList();
+                                    var isLeftTemplate = (template.NameOfVsd ?? "").Contains("Left", StringComparison.OrdinalIgnoreCase);
+
+                                    <div class="row mt-2">
+                                        <div class="col-md-6">
+                                            <table class="table table-sm">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Distance</th>
+                                                        <th>Depth</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var pt in pts)
+                                                    {
+                                                        <tr>
+                                                            <td>@pt.Distance.ToString("0.###")</td>
+                                                            <td>@pt.Depth.ToString("0.###")</td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        <div class="col-md-6">
+                                            @{
+                                                var drawPts = isLeftTemplate
+                                                    ? pts.OrderByDescending(p => p.Distance).ToList()
+                                                    : pts.OrderBy(p => p.Distance).ToList();
+
+                                                var firstDist = pts.Min(p => p.Distance);
+                                                if (firstDist <= 0) firstDist = 0.6;
+
+                                                double svgW2 = 320;
+                                                double svgH2 = 220;
+
+                                                double padLeft2 = 18;
+                                                double padRight2 = 18;
+                                                double padTop2 = 12;
+                                                double padBottom2 = 12;
+
+                                                double frameX = padLeft2;
+                                                double frameY = padTop2;
+                                                double frameW = svgW2 - padLeft2 - padRight2;
+                                                double frameH = svgH2 - padTop2 - padBottom2;
+
+                                                double deckTopY = frameY + 28;
+                                                double deckThicknessPx = 12;
+                                                double deckBottomY = deckTopY + deckThicknessPx;
+
+                                                double minDepth = pts.Min(p => p.Depth);
+                                                double maxDepth = pts.Max(p => p.Depth);
+                                                if (Math.Abs(maxDepth - minDepth) < 1e-9) maxDepth = minDepth + 1.0;
+
+                                                double maxDist = pts.Max(p => p.Distance);
+                                                if (Math.Abs(maxDist - firstDist) < 1e-9) maxDist = firstDist + 1.0;
+
+                                                double clInset = 26;
+                                                double outerMargin = 14;
+                                                double usableSpan;
+
+                                                double clX;
+                                                double colX;
+                                                double colWidthPx = 22;
+                                                double faceX;
+
+                                                if (isLeftTemplate)
+                                                {
+                                                    clX = frameX + frameW - clInset;
+                                                    colX = clX - colWidthPx;
+                                                    faceX = colX;
+                                                    usableSpan = faceX - (frameX + outerMargin);
+                                                }
+                                                else
+                                                {
+                                                    clX = frameX + clInset;
+                                                    colX = clX;
+                                                    faceX = colX + colWidthPx;
+                                                    usableSpan = (frameX + frameW - outerMargin) - faceX;
+                                                }
+
+                                                if (usableSpan < 1.0) usableSpan = 1.0;
+
+                                                double MapDepthToY(double depth)
+                                                {
+                                                    var t = (depth - minDepth) / (maxDepth - minDepth);
+                                                    return deckBottomY + t * ((frameY + frameH - 44) - deckBottomY);
+                                                }
+
+                                                double MapDistToX(double dist)
+                                                {
+                                                    var t = (dist - firstDist) / (maxDist - firstDist);
+                                                    if (double.IsNaN(t) || double.IsInfinity(t)) t = 0.0;
+
+                                                    if (isLeftTemplate)
+                                                        return faceX - t * usableSpan;
+
+                                                    return faceX + t * usableSpan;
+                                                }
+
+                                                var soffitPts = drawPts
+                                                .Select(p => new
+                                                {
+                                                    X = MapDistToX(p.Distance),
+                                                    Y = MapDepthToY(p.Depth),
+                                                    Dist = p.Distance,
+                                                    Depth = p.Depth
+                                                })
+                                                .ToList();
+
+                                                var soffitPolyline = string.Join(" ",
+                                                soffitPts.Select(p => $"{p.X:0.###},{p.Y:0.###}"));
+
+                                                double deckLeftX;
+                                                double deckRightX;
+
+                                                if (isLeftTemplate)
+                                                {
+                                                    deckLeftX = soffitPts.Min(p => p.X);
+                                                    deckRightX = faceX;
+                                                }
+                                                else
+                                                {
+                                                    deckLeftX = faceX;
+                                                    deckRightX = soffitPts.Max(p => p.X);
+                                                }
+
+                                                var bodyPoly = new List<string>
+                                                {
+                                                $"{deckLeftX:0.###},{deckBottomY:0.###}",
+                                                $"{deckRightX:0.###},{deckBottomY:0.###}"
+                                                };
+
+                                                bodyPoly.AddRange(
+                                                soffitPts.AsEnumerable().Reverse().Select(p => $"{p.X:0.###},{p.Y:0.###}")
+                                                );
+
+                                                var bodyPolygonPoints = string.Join(" ", bodyPoly);
+                                                double colBottomY = frameY + frameH - 8;
+                                            }
+
+                                            <svg width="@svgW2" height="@svgH2" viewBox="0 0 @svgW2 @svgH2"
+                                            style="border:1px solid #ccc; background:#7fe3e3;">
+
+                                                <rect x="@frameX" y="@frameY" width="@frameW" height="@frameH"
+                                                fill="none" stroke="#333" stroke-width="1" />
+
+                                                <rect x="@colX" y="@deckTopY" width="@colWidthPx" height="@(colBottomY - deckTopY)"
+                                                fill="#a9a9a9" stroke="#333" stroke-width="1" />
+
+                                                <line x1="@clX" y1="@frameY" x2="@clX" y2="@(frameY + frameH)"
+                                                stroke="#333" stroke-width="1.2" stroke-dasharray="4,3" />
+                                                <svg:text x="@clX" y="@(frameY + frameH - 6)"
+                                                text-anchor="middle" font-size="12" fill="#222">CL</svg:text>
+
+                                                <rect x="@deckLeftX" y="@deckTopY" width="@(deckRightX - deckLeftX)" height="@deckThicknessPx"
+                                                fill="#a9a9a9" stroke="#333" stroke-width="1" />
+
+                                                <polygon points="@bodyPolygonPoints"
+                                                fill="#a9a9a9"
+                                                stroke="#333"
+                                                stroke-width="1" />
+
+                                                <polyline points="@soffitPolyline"
+                                                fill="none"
+                                                stroke="#333"
+                                                stroke-width="1.5" />
+
+                                                @foreach (var p in soffitPts)
+                                                {
+                                                    <circle cx="@p.X" cy="@p.Y" r="3" fill="#b35a00" stroke="#333" stroke-width="1" />
+                                                }
+                                            </svg>
+                                        </div>
+                                    </div>
+                                }
+                            </details>
+                        }
+                    </div>
+                }
+
+            </div>
+        </div>
+    }
+}
+@code {
+    private string? status;
+    private BreaseProject? project;
+    private string? _originalCbzText;
+    private string? _originalCbzFileName;
+    private string? selectedFileName;
+
+    private async Task OnFileChange(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null)
+        {
+            status = "No file selected.";
+            project = null;
+            _originalCbzText = null;
+            _originalCbzFileName = null;
+            selectedFileName = null;
+
+            ProjectState.OriginalCbzText = null;
+            ProjectState.OriginalCbzFileName = null;
+            ProjectState.CurrentProject = null;
+            ProjectState.CrossSectionEditorPoints = new List<XData>();
+            ProjectState.LastSavedCrossSection = null;
+
+            ProjectState.NotifyStateChanged();
+            await JS.InvokeVoidAsync("projectStorage.clearCbz");
+            return;
+        }
+
+        if (!file.Name.EndsWith(".cbz", StringComparison.OrdinalIgnoreCase))
+        {
+            status = "Please select a .cbz file.";
+            selectedFileName = file.Name;
+            return;
+        }
+
+        selectedFileName = file.Name;
+
+        try
+        {
+            status = $"Reading {file.Name}...";
+
+            _originalCbzFileName = file.Name;
+            ProjectState.OriginalCbzFileName = file.Name;
+
+            using var browserStream = file.OpenReadStream(maxAllowedSize: 20 * 1024 * 1024);
+            using var reader = new StreamReader(browserStream);
+            _originalCbzText = await reader.ReadToEndAsync();
+
+            ProjectState.OriginalCbzText = _originalCbzText;
+
+            using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(_originalCbzText));
+            ms.Position = 0;
+
+            project = ProjectLoader.LoadFromStream(ms, file.Name);
+            ProjectState.CurrentProject = project;
+            ProjectState.CrossSectionEditorPoints = new List<XData>();
+            ProjectState.LastSavedCrossSection = null;
+
+            var draftKey = string.IsNullOrWhiteSpace(ProjectState.OriginalCbzFileName)
+                ? null
+                : $"cross-section-draft::{ProjectState.OriginalCbzFileName}";
+
+            if (!string.IsNullOrWhiteSpace(draftKey))
+            {
+                await DraftStorage.RemoveAsync(draftKey);
+            }
+
+            await JS.InvokeVoidAsync(
+                "projectStorage.saveCbz",
+                ProjectState.OriginalCbzFileName,
+                ProjectState.OriginalCbzText);
+
+            InitializeCrossSectionVisibility();
+            ProjectState.NotifyStateChanged();
+
+            if (project is null)
+            {
+                status = "Parsing returned no project (null).";
+            }
+            else
+            {
+                status = "File loaded successfully. You can review a plot of the data and enter a new cross-section by selecting Cross-Sections on the Navigation Bar.";
+            }
+        }
+        catch (Exception ex)
+        {
+            status = $"Error parsing CBZ: {ex.Message}";
+            project = null;
+            _originalCbzText = null;
+            _originalCbzFileName = null;
+            selectedFileName = null;
+
+            ProjectState.OriginalCbzText = null;
+            ProjectState.OriginalCbzFileName = null;
+            ProjectState.CurrentProject = null;
+            ProjectState.CrossSectionEditorPoints = new List<XData>();
+            ProjectState.LastSavedCrossSection = null;
+
+            ProjectState.NotifyStateChanged();
+            await JS.InvokeVoidAsync("projectStorage.clearCbz");
+        }
+    }
+    protected override void OnInitialized()
+    {
+        project = ProjectState.CurrentProject;
+
+        if (project == null)
+        {
+            selectedFileName = null;
+            status = null;
+        }
+        else
+        {
+            selectedFileName = ProjectState.OriginalCbzFileName;
+        }
+
+        InitializeCrossSectionVisibility();
+    }
+    // ---------------- SVG helpers ----------------
+
+    private static IEnumerable<double> GetElevations(
+        SubstructureItem s,
+        Brease.Core.Geometry.SubstructureGeometryResult geom)
+    {
+        if (s.PileTipElevation is double pt) yield return pt;
+        if (s.PileTopElevation is double ptop) yield return ptop;
+
+        if (s.FootingBottomElevation is double fb) yield return fb;
+        if (s.FootingTopElevation is double ft) yield return ft;
+
+        if (s.ColumnTopElevation is double ct) yield return ct;
+
+        yield return geom.SoffitLeftElevation;
+        yield return geom.SoffitCenterElevation;
+        yield return geom.SoffitRightElevation;
+
+        if (s.TremieSealBottomElevation is double tsb) yield return tsb;
+        if (s.TremieSealTopElevation is double tst) yield return tst;
+
+        if (s.ItemBottomElevation is double ib) yield return ib;
+    }
+
+    private static double MapY(double elev, double min, double max, double topPad, double height)
+    {
+        if (Math.Abs(max - min) < 1e-9) return topPad + height / 2.0;
+        var t = (elev - min) / (max - min); // 0..1
+        return topPad + (1.0 - t) * height;
+    }
+    private static RenderFragment SubstructureSvg(
+    SubstructureItem s,
+    Brease.Core.Geometry.SubstructureGeometryResult geom) => builder =>
+{
+    var elevs = GetElevations(s, geom).ToList();
+    if (elevs.Count == 0)
+    {
+        builder.AddMarkupContent(0, "<div class=\"text-muted\">No elevation data to draw.</div>");
+        return;
+    }
+
+    var min = elevs.Min();
+    var max = elevs.Max();
+
+    var pad = Math.Max(1.0, (max - min) * 0.08);
+    min -= pad;
+    max += pad;
+
+    const double w = 280;
+    const double h = 210;
+
+    const double left = 95;
+    const double right = 8;
+    const double top = 14;
+    const double bottom = 25;
+
+    var plotW = w - left - right;
+    var plotH = h - top - bottom;
+
+    var xCenter = left + plotW * 0.50;
+
+    var xPile = xCenter;
+    var xFoot = xCenter;
+    var xCol = xCenter;
+
+    double footingWidthFt = 2.5;
+    if (!string.IsNullOrWhiteSpace(s.FootingWidth))
+        double.TryParse(
+            s.FootingWidth.Trim(),
+            System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out footingWidthFt);
+    if (footingWidthFt <= 0.0) footingWidthFt = 2.5;
+
+    int pileCountForScale = 1;
+    if (!string.IsNullOrWhiteSpace(s.PileNumber))
+        int.TryParse(s.PileNumber.Trim(), out pileCountForScale);
+    if (pileCountForScale < 1) pileCountForScale = 1;
+
+    double pileDiaForScale = 1.0;
+    if (!string.IsNullOrWhiteSpace(s.PileWidth))
+        double.TryParse(
+            s.PileWidth.Trim(),
+            System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out pileDiaForScale);
+    if (pileDiaForScale <= 0.0) pileDiaForScale = 1.0;
+
+    double clearSpacingForScale = 0.0;
+    if (!string.IsNullOrWhiteSpace(s.PileSpacing))
+        double.TryParse(
+            s.PileSpacing.Trim(),
+            System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out clearSpacingForScale);
+    if (clearSpacingForScale < 0.0) clearSpacingForScale = 0.0;
+
+    var pileGroupWidthFt =
+        pileCountForScale * pileDiaForScale +
+        (pileCountForScale - 1) * clearSpacingForScale;
+
+    var controllingWidthFt = Math.Max(footingWidthFt, pileGroupWidthFt);
+
+    const double maxStructureWidthPx = 36.0;
+
+    var pxPerFt = maxStructureWidthPx / controllingWidthFt;
+    var footingWidthPx = footingWidthFt * pxPerFt;
+
+    double Y(double elev) => MapY(elev, min, max, top, plotH);
+
+    double lastLabelY = double.NegativeInfinity;
+
+    double LabelY(double elev)
+    {
+        var y = Y(elev) + 4.0;
+        const double minSpacing = 14.0;
+
+        if (y - lastLabelY < minSpacing)
+            y = lastLabelY + minSpacing;
+
+        lastLabelY = y;
+        return y;
+    }
+
+    var sb = new System.Text.StringBuilder();
+
+    sb.AppendLine($@"
+<svg xmlns=""http://www.w3.org/2000/svg""
+     width=""{w}"" height=""{h}"" viewBox=""0 0 {w} {h}""
+     role=""img"" aria-label=""Substructure elevation sketch""
+     style=""border:1px solid #ddd; border-radius:6px; background:#fff;"">
+
+  <rect x=""{left:F1}"" y=""{top:F1}"" width=""{plotW:F1}"" height=""{plotH:F1}""
+        fill=""none"" stroke=""#ddd"" />
+");
+
+    if (s.FootingTopElevation is double footingTopForColumn)
+    {
+        var yTopLeft = Y(geom.SoffitLeftElevation);
+        var yTopRight = Y(geom.SoffitRightElevation);
+        var yBottom = Y(footingTopForColumn);
+
+        var colLeftX = xCol - 12;
+        var colRightX = xCol + 12;
+
+        sb.AppendLine($@"
+  <polygon points=""{colLeftX:F1},{yTopLeft:F1} {colRightX:F1},{yTopRight:F1} {colRightX:F1},{yBottom:F1} {colLeftX:F1},{yBottom:F1}""
+           fill=""#fafafa"" stroke=""#666"" />
+
+  <line x1=""{colLeftX:F1}"" y1=""{yTopLeft:F1}"" x2=""{colRightX:F1}"" y2=""{yTopRight:F1}""
+        stroke=""#444"" stroke-width=""1.5"" />
+
+  <text x=""{left - 6:F1}"" y=""{LabelY(geom.SoffitCenterElevation):F1}""
+        text-anchor=""end"" font-size=""11"" fill=""#222"">SOFFIT El: {geom.SoffitCenterElevation:0.##}</text>
+");
+    }
+
+    if (s.FootingBottomElevation is double footBot && s.FootingTopElevation is double footTop)
+    {
+        var yTop = Y(footTop);
+        var yBot = Y(footBot);
+        var rectY = Math.Min(yTop, yBot);
+        var rectH = Math.Abs(yBot - yTop);
+        var footingHalfPx = footingWidthPx / 2.0;
+
+        sb.AppendLine($@"
+  <rect x=""{xFoot - footingHalfPx:F1}"" y=""{rectY:F1}"" width=""{footingWidthPx:F1}"" height=""{rectH:F1}""
+        fill=""#f3f3f3"" stroke=""#666"" />
+
+  <text x=""{left - 6:F1}"" y=""{LabelY(footTop):F1}""
+        text-anchor=""end"" font-size=""11"" fill=""#222"">TOF El: {footTop:0.##}</text>
+  <text x=""{left - 6:F1}"" y=""{LabelY(footBot):F1}""
+        text-anchor=""end"" font-size=""11"" fill=""#222"">BOF El: {footBot:0.##}</text>
+");
+    }
+
+    if (s.TremieSealTopElevation is double tremieTop && s.TremieSealBottomElevation is double tremieBot)
+    {
+        var yTop = Y(tremieTop);
+        var yBot = Y(tremieBot);
+        var rectY = Math.Min(yTop, yBot);
+        var rectH = Math.Abs(yBot - yTop);
+
+        var tremieWidthPx = footingWidthPx;
+        var halfWidth = tremieWidthPx / 2.0;
+
+        sb.AppendLine($@"
+  <rect x=""{xFoot - halfWidth:F1}"" y=""{rectY:F1}"" width=""{tremieWidthPx:F1}"" height=""{rectH:F1}""
+        fill=""#e8e8e8"" stroke=""#666"" />
+
+  <text x=""{left - 6:F1}"" y=""{LabelY(tremieBot):F1}""
+        text-anchor=""end"" font-size=""11"" fill=""#222"">BOT El: {tremieBot:0.##}</text>
+");
+    }
+
+    if (s.PileTipElevation is double pileTip)
+    {
+        var pileTop = s.TremieSealBottomElevation
+                     ?? s.FootingBottomElevation
+                     ?? pileTip;
+
+        int pileCount = 1;
+        if (!string.IsNullOrWhiteSpace(s.PileNumber))
+            int.TryParse(s.PileNumber.Trim(), out pileCount);
+        if (pileCount < 1) pileCount = 1;
+
+        double pileDia = 1.0;
+        if (!string.IsNullOrWhiteSpace(s.PileWidth))
+            double.TryParse(
+                s.PileWidth.Trim(),
+                System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out pileDia);
+        if (pileDia <= 0.0) pileDia = 1.0;
+
+        double clearSpacing = 0.0;
+        if (!string.IsNullOrWhiteSpace(s.PileSpacing))
+            double.TryParse(
+                s.PileSpacing.Trim(),
+                System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out clearSpacing);
+        if (clearSpacing < 0.0) clearSpacing = 0.0;
+
+        var pileCenterSpacingFt = pileDia + clearSpacing;
+        var pileCenterSpacingPx = pileCenterSpacingFt * pxPerFt;
+        var pileWidthPx = Math.Max(3.0, pileDia * pxPerFt);
+
+        var firstPileX = xPile - ((pileCount - 1) * pileCenterSpacingPx / 2.0);
+
+        for (int i = 0; i < pileCount; i++)
+        {
+            var pileX = firstPileX + i * pileCenterSpacingPx;
+
+            var yTop = Y(pileTop);
+            var yBot = Y(pileTip);
+            var rectY = Math.Min(yTop, yBot);
+            var rectH = Math.Abs(yBot - yTop);
+
+            sb.AppendLine($@"
+  <rect x=""{pileX - pileWidthPx / 2.0:F1}"" y=""{rectY:F1}""
+        width=""{pileWidthPx:F1}"" height=""{rectH:F1}""
+        fill=""#666"" stroke=""#666"" />");
+        }
+
+        sb.AppendLine($@"
+  <text x=""{left - 6:F1}"" y=""{LabelY(pileTip):F1}""
+        text-anchor=""end"" font-size=""11"" fill=""#222"">PTE: {pileTip:0.##}</text>
+");
+    }
+
+    sb.AppendLine("</svg>");
+
+    builder.AddMarkupContent(0, sb.ToString());
+};
+    private RenderFragment BridgeProfileSvg() => builder =>
+ {
+     if (project is null)
+     {
+         builder.AddMarkupContent(0, "<div class=\"text-muted\">No project loaded.</div>");
+         return;
+     }
+
+     var svg = Brease.Core.Geometry.BridgeProfileSvgRenderer.Render(
+         project,
+         section => GetCrossSectionVisible(GetCrossSectionKey(section)));
+
+     builder.AddMarkupContent(1, svg);
+ };
+
+    private static string Display(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "(none)" : value;
+    }
+
+    private Dictionary<string, bool> _crossSectionVisibility = new();
+
+    private static string GetCrossSectionKey(Section section)
+    {
+        return $"{section.Number}:{section.Date}";
+    }
+
+    private bool GetCrossSectionVisible(string key)
+    {
+        return _crossSectionVisibility.TryGetValue(key, out var visible)
+            ? visible
+            : true;
+    }
+
+    private void SetCrossSectionVisible(string key, ChangeEventArgs e)
+    {
+        bool isVisible = false;
+
+        if (e.Value is bool b)
+            isVisible = b;
+        else if (e.Value is string s && bool.TryParse(s, out var parsed))
+            isVisible = parsed;
+
+        _crossSectionVisibility[key] = isVisible;
+    }
+
+    private void InitializeCrossSectionVisibility()
+    {
+        _crossSectionVisibility.Clear();
+
+        if (project?.CrossSections == null)
+            return;
+
+        foreach (var section in project.CrossSections)
+        {
+            var key = GetCrossSectionKey(section);
+            if (!_crossSectionVisibility.ContainsKey(key))
+                _crossSectionVisibility[key] = true;
+        }
+    }
+
+    private string RenderSymbolSvg(string symbol, string color)
+    {
+        return symbol switch
+        {
+            "circle" =>
+                $"<svg width='14' height='14' viewBox='0 0 14 14' style='vertical-align:middle'><circle cx='7' cy='7' r='4.5' fill='{color}' stroke='black' stroke-width='1'/></svg>",
+
+            "square" =>
+                $"<svg width='14' height='14' viewBox='0 0 14 14' style='vertical-align:middle'><rect x='3' y='3' width='8' height='8' fill='{color}' stroke='black' stroke-width='1'/></svg>",
+
+            "triangle" =>
+                $"<svg width='14' height='14' viewBox='0 0 14 14' style='vertical-align:middle'><polygon points='7,2 12,12 2,12' fill='{color}' stroke='black' stroke-width='1'/></svg>",
+
+            "diamond" =>
+                $"<svg width='14' height='14' viewBox='0 0 14 14' style='vertical-align:middle'><polygon points='7,1 13,7 7,13 1,7' fill='{color}' stroke='black' stroke-width='1'/></svg>",
+
+            "x" =>
+                $"<svg width='14' height='14' viewBox='0 0 14 14' style='vertical-align:middle'>" +
+                $"<line x1='3' y1='3' x2='11' y2='11' stroke='{color}' stroke-width='2' />" +
+                $"<line x1='11' y1='3' x2='3' y2='11' stroke='{color}' stroke-width='2' />" +
+                $"</svg>",
+
+            _ =>
+                $"<svg width='14' height='14' viewBox='0 0 14 14' style='vertical-align:middle'><circle cx='7' cy='7' r='4.5' fill='{color}' stroke='black' stroke-width='1'/></svg>"
+        };
+    }
+    private async Task EnsureProjectLoadedAsync()
+    {
+        if (ProjectState.CurrentProject != null)
+            return;
+
+        string? savedFileName = null;
+        string? savedCbzText = null;
+
+        try
+        {
+            savedFileName = await JS.InvokeAsync<string>("projectStorage.getCbzFileName");
+            savedCbzText = await JS.InvokeAsync<string>("projectStorage.getCbzText");
+        }
+        catch
+        {
+            // JS/localStorage not available yet or script missing
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(savedCbzText))
+            return;
+
+        try
+        {
+            using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(savedCbzText));
+            ms.Position = 0;
+
+            var restoredProject = ProjectLoader.LoadFromStream(
+                ms,
+                string.IsNullOrWhiteSpace(savedFileName) ? "RestoredProject.cbz" : savedFileName);
+
+            ProjectState.OriginalCbzFileName = savedFileName;
+            ProjectState.OriginalCbzText = savedCbzText;
+            ProjectState.CurrentProject = restoredProject;
+            ProjectState.LastSavedCrossSection = null;
+
+            _originalCbzFileName = savedFileName;
+            _originalCbzText = savedCbzText;
+            project = restoredProject;
+
+            if (restoredProject != null)
+            {
+                status = "Previously loaded CBZ restored from browser storage.";
+            }
+
+            ProjectState.NotifyStateChanged();
+        }
+        catch
+        {
+            await JS.InvokeVoidAsync("projectStorage.clearCbz");
+
+            ProjectState.OriginalCbzFileName = null;
+            ProjectState.OriginalCbzText = null;
+            ProjectState.CurrentProject = null;
+
+            _originalCbzFileName = null;
+            _originalCbzText = null;
+            project = null;
+            selectedFileName = null;
+
+            status = "Saved CBZ data could not be restored and was cleared.";
+            ProjectState.NotifyStateChanged();
+        }
+    }
+}

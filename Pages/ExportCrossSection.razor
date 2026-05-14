@@ -1,0 +1,87 @@
+﻿@page "/export-cross-section"
+@using System.IO
+@using Brease.Core.Models
+@using CBreaseWebApp1.Services
+@inject ProjectState ProjectState
+@inject CbzFileService CbzService
+@inject IJSRuntime JS
+
+<h3>Export New Cross Section</h3>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <div class="alert alert-info">@StatusMessage</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(ErrorMessage))
+{
+    <div class="alert alert-danger">@ErrorMessage</div>
+}
+
+<button class="btn btn-primary" @onclick="ExportUpdatedCbzAsync">
+    Export Updated CBZ
+</button>
+
+@code {
+    private string? StatusMessage;
+    private string? ErrorMessage;
+
+    private async Task ExportUpdatedCbzAsync()
+    {
+        StatusMessage = null;
+        ErrorMessage = null;
+
+        try
+        {
+            var project = ProjectState.CurrentProject;
+            var originalCbzText = ProjectState.OriginalCbzText;
+
+            if (project is null)
+            {
+                ErrorMessage = "No CBZ project is loaded.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(originalCbzText))
+            {
+                ErrorMessage = "Original CBZ text is not available.";
+                return;
+            }
+
+            string fileName;
+            if (!string.IsNullOrWhiteSpace(ProjectState.OriginalCbzFileName))
+            {
+                fileName = Path.GetFileNameWithoutExtension(ProjectState.OriginalCbzFileName) + "_updated.cbz";
+            }
+            else if (!string.IsNullOrWhiteSpace(project.BridgeId))
+            {
+                fileName = $"{project.BridgeId}_updated.cbz";
+            }
+            else
+            {
+                fileName = "updated.cbz";
+            }
+
+            var saved = await JS.InvokeAsync<bool>(
+                "saveFileFromText",
+                fileName,
+                "text/plain",
+                originalCbzText);
+
+            if (!saved)
+            {
+                await JS.InvokeVoidAsync(
+                    "downloadFileFromText",
+                    fileName,
+                    "text/plain",
+                    originalCbzText);
+            }
+
+            StatusMessage = $"Exported {fileName}";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+    }
+}

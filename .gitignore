@@ -1,0 +1,36 @@
+# Build outputs
+bin/
+obj/
+**/bin/
+**/obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Logs/temp
+*.log
+*.tmp
+
+# Local dotnet/NuGet cache
+.dotnet-home/
+
+# Publish artifacts
+publish/
+Publish/
+
+# Rider/ReSharper
+.idea/
+_ReSharper*/
+*.DotSettings.user
+
+# OS files
+Thumbs.db
+.DS_Store
+
+publish-output/
+Publish/
+wwwroot/_framework/
+wwwroot/service-worker-assets.js
+*.zip

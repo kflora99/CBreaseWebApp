@@ -1,0 +1,168 @@
+﻿@using System.Globalization
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+@using Brease.Core.Models
+@using Brease.Core.Geometry
+@using System.Text
+
+<div class="card mb-3">
+    <div class="card-header">
+        Cross-Section Plot
+    </div>
+    <div class="card-body">
+        @if (Project?.CrossSections?.Count > 0)
+        {
+            <div class="mb-2" style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+                <strong style="white-space:nowrap;">Cross-Sections:</strong>
+
+                <div style="display:flex; flex-wrap:wrap; gap:12px;">
+                    @for (int i = 0; i < Project.CrossSections.Count; i++)
+                    {
+                        var xs = Project.CrossSections[i];
+                        var key = GetCrossSectionKey(xs);
+                        var color = BridgeProfileSvgRenderer.GetSeriesColor(i);
+                        var symbol = BridgeProfileSvgRenderer.GetSeriesSymbol(i);
+
+                        <label style="color:@color; font-weight:500; display:inline-flex; align-items:center; gap:4px;">
+                            <input type="checkbox"
+                                   style="accent-color:@color;"
+                                   checked="@GetCrossSectionVisible(key)"
+                                   @onchange="e => SetCrossSectionVisible(key, e)" />
+                            @((MarkupString)RenderSymbolSvg(symbol, color))
+                            @GetCrossSectionLabel(xs, i)
+                        </label>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="border rounded p-2 bg-white plot-shell">
+            @if (Project is null)
+            {
+                <div class="text-muted">No project loaded.</div>
+            }
+            else
+            {
+                @((MarkupString)RenderCrossSectionSvg())
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public BreaseProject? Project { get; set; }
+    [Parameter] public List<XData>? DraftPoints { get; set; }
+
+    private readonly Dictionary<string, bool> _crossSectionVisibility = new();
+
+    private string GetCrossSectionKey(Section xs)
+    {
+        var date = xs.Date ?? "";
+        var number = xs.Number.ToString(CultureInfo.InvariantCulture);
+        return $"{number}|{date}";
+    }
+
+    private string GetCrossSectionLabel(Section xs, int index)
+    {
+        if (!string.IsNullOrWhiteSpace(xs.Date))
+            return xs.Date;
+
+        return $"XS {xs.Number}";
+    }
+
+    private bool GetCrossSectionVisible(string key)
+    {
+        if (!_crossSectionVisibility.TryGetValue(key, out var visible))
+            return true;
+
+        return visible;
+    }
+
+    private void SetCrossSectionVisible(string key, ChangeEventArgs e)
+    {
+        bool isChecked = e.Value is bool b && b;
+        _crossSectionVisibility[key] = isChecked;
+    }
+
+    private string RenderSymbolSvg(string symbol, string color)
+    {
+        return symbol switch
+        {
+            "circle" =>
+                $@"<svg width=""10"" height=""10"" viewBox=""0 0 10 10"" aria-hidden=""true"">
+                    <circle cx=""5"" cy=""5"" r=""3"" fill=""{color}"" stroke=""black"" stroke-width=""0.8"" />
+                   </svg>",
+
+            "square" =>
+                $@"<svg width=""10"" height=""10"" viewBox=""0 0 10 10"" aria-hidden=""true"">
+                    <rect x=""2"" y=""2"" width=""6"" height=""6"" fill=""{color}"" stroke=""black"" stroke-width=""0.8"" />
+                   </svg>",
+
+            "triangle" =>
+                $@"<svg width=""10"" height=""10"" viewBox=""0 0 10 10"" aria-hidden=""true"">
+                    <polygon points=""5,1.5 8.5,8 1.5,8"" fill=""{color}"" stroke=""black"" stroke-width=""0.8"" />
+                   </svg>",
+
+            "diamond" =>
+                $@"<svg width=""10"" height=""10"" viewBox=""0 0 10 10"" aria-hidden=""true"">
+                    <polygon points=""5,1.5 8.5,5 5,8.5 1.5,5"" fill=""{color}"" stroke=""black"" stroke-width=""0.8"" />
+                   </svg>",
+
+            "x" =>
+                $@"<svg width=""10"" height=""10"" viewBox=""0 0 10 10"" aria-hidden=""true"">
+                    <line x1=""2"" y1=""2"" x2=""8"" y2=""8"" stroke=""{color}"" stroke-width=""1.4"" />
+                    <line x1=""8"" y1=""2"" x2=""2"" y2=""8"" stroke=""{color}"" stroke-width=""1.4"" />
+                   </svg>",
+
+            _ =>
+                $@"<svg width=""10"" height=""10"" viewBox=""0 0 10 10"" aria-hidden=""true"">
+                    <circle cx=""5"" cy=""5"" r=""3"" fill=""{color}"" stroke=""black"" stroke-width=""0.8"" />
+                   </svg>"
+        };
+    }
+
+    private string RenderCrossSectionSvg()
+    {
+        if (Project == null)
+            return "<div class=\"text-muted\">No project loaded.</div>";
+
+        return BridgeProfileSvgRenderer.Render(
+            Project,
+            xs => GetCrossSectionVisible(GetCrossSectionKey(xs)),
+            DraftPoints);
+    }
+    private static string RenderPlotMarker(double x, double y, string symbol, string color)
+    {
+        return symbol switch
+        {
+            "circle" =>
+                $@"<circle cx=""{x:0.###}"" cy=""{y:0.###}"" r=""2.9""
+        fill=""{color}"" stroke=""black"" stroke-width=""0.7"" />",
+
+            "square" =>
+                $@"<rect x=""{x - 2.9:0.###}"" y=""{y - 2.9:0.###}""
+        width=""5.8"" height=""5.8""
+        fill=""{color}"" stroke=""black"" stroke-width=""0.7"" />",
+
+            "triangle" =>
+                $@"<polygon points=""{x:0.###},{y - 3.3:0.###} {x + 3.1:0.###},{y + 2.7:0.###} {x - 3.1:0.###},{y + 2.7:0.###}""
+        fill=""{color}"" stroke=""black"" stroke-width=""0.7"" />",
+
+            "diamond" =>
+                $@"<polygon points=""{x:0.###},{y - 3.3:0.###} {x + 3.3:0.###},{y:0.###} {x:0.###},{y + 3.3:0.###} {x - 3.3:0.###},{y:0.###}""
+        fill=""{color}"" stroke=""black"" stroke-width=""0.7"" />",
+
+            "x" =>
+                $@"<g>
+        <line x1=""{x - 3:0.###}"" y1=""{y - 3:0.###}"" x2=""{x + 3:0.###}"" y2=""{y + 3:0.###}""
+              stroke=""{color}"" stroke-width=""1.3"" />
+        <line x1=""{x + 3:0.###}"" y1=""{y - 3:0.###}"" x2=""{x - 3:0.###}"" y2=""{y + 3:0.###}""
+              stroke=""{color}"" stroke-width=""1.3"" />
+       </g>",
+
+            _ =>
+                $@"<circle cx=""{x:0.###}"" cy=""{y:0.###}"" r=""2.9""
+        fill=""{color}"" stroke=""black"" stroke-width=""0.7"" />"
+        };
+    }
+}

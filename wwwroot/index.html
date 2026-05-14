@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CBrease Field App</title>
+    <base href="/cbreasefield/" />
+
+    <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link href="CBreaseWebApp1.styles.css" rel="stylesheet" />
+    <link href="manifest.webmanifest" rel="manifest" />
+    <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
+
+    <script type="importmap"></script>
+    <script src="js/download.js"></script>
+    <script src="js/draftStorage.js"></script>
+    <script src="js/buildInfo.js"></script>
+</head>
+<body>
+    <div id="update-banner"
+         style="display:none; position:fixed; top:12px; right:12px; z-index:9999; background:#fff3cd; color:#664d03; border:1px solid #ffecb5; border-radius:8px; padding:12px 14px; box-shadow:0 4px 12px rgba(0,0,0,0.15); font-family:Arial, sans-serif; max-width:320px;">
+        <div style="margin-bottom:8px; font-weight:600;">New version available</div>
+        <div style="margin-bottom:10px;">Click reload to update.</div>
+        <button id="reload-update-btn"
+                type="button"
+                style="background:#0d6efd; color:white; border:none; border-radius:6px; padding:6px 12px; cursor:pointer;">
+            Reload
+        </button>
+    </div>
+
+    <div id="app">
+        <svg class="loading-progress">
+            <circle r="40%" cx="50%" cy="50%" />
+            <circle r="40%" cx="50%" cy="50%" />
+        </svg>
+        <div class="loading-progress-text"></div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="." class="reload">Reload</a>
+        <span class="dismiss">✖</span>
+    </div>
+
+    <script src="_framework/blazor.webassembly.js"></script>
+    <script src="js/projectStorage.js"></script>
+
+    <script>
+        (function () {
+            let serviceWorkerRegistration = null;
+            let refreshing = false;
+
+            const banner = document.getElementById('update-banner');
+            const reloadButton = document.getElementById('reload-update-btn');
+
+            function showUpdateBanner() {
+                if (banner) {
+                    banner.style.display = 'block';
+                }
+            }
+
+            function hideUpdateBanner() {
+                if (banner) {
+                    banner.style.display = 'none';
+                }
+            }
+
+            function promptUserToReload(registration) {
+                serviceWorkerRegistration = registration;
+                showUpdateBanner();
+            }
+
+            function watchInstallingWorker(registration) {
+                if (!registration.installing) {
+                    return;
+                }
+
+                registration.installing.addEventListener('statechange', function () {
+                    if (registration.waiting) {
+                        promptUserToReload(registration);
+                    }
+                });
+            }
+
+            if (reloadButton) {
+                reloadButton.addEventListener('click', function () {
+                    if (serviceWorkerRegistration && serviceWorkerRegistration.waiting) {
+                        serviceWorkerRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                    }
+                });
+            }
+
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', async function () {
+                    try {
+                        const registration = await navigator.serviceWorker.register('service-worker.js', {
+                            updateViaCache: 'none'
+                        });
+
+                        console.log('Service worker registered with scope:', registration.scope);
+
+                        if (registration.waiting) {
+                            promptUserToReload(registration);
+                        }
+
+                        registration.addEventListener('updatefound', function () {
+                            watchInstallingWorker(registration);
+                        });
+
+                        navigator.serviceWorker.addEventListener('controllerchange', function () {
+                            if (refreshing) return;
+                            refreshing = true;
+                            hideUpdateBanner();
+                            window.location.reload();
+                        });
+                    } catch (err) {
+                        console.error('Service worker registration failed:', err);
+                    }
+                });
+            } else {
+                console.warn('Service workers not supported in this browser.');
+            }
+        })();
+    </script>
+</body>
+</html>
