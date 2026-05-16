@@ -789,45 +789,34 @@ else
         if (subItem is null || !subItem.Station.HasValue)
             return result;
 
-        double hDist = draft.HDist ?? 0.0;
-        double vDist = draft.VDist ?? 0.0;
+        var pointForCalculation = new XData
+        {
+            Point = result.Point,
+            FromItem = result.FromItem,
+            FromItemNumber = result.FromItemNumber,
+            HDist = draft.HDist,
+            VDist = draft.VDist,
+            VAdjustment = draft.VAdjustment,
+            Description = draft.Description
+        };
 
-        var station = DeckElevationEvaluator.GetCrossSectionStation(
+        return CrossSectionPointCalculator.Calculate(
+            _section,
+            pointForCalculation,
             subItem,
-            _section.RefFace,
-            hDist);
-        double? pointElevation = null;
+            project.VerticalAlignment,
+            project.ConstantCrossSlope,
+            project.VaryingCrossSlopes,
+            project.CrossSlopeHorizontalDistance,
+            GetDirectElevationInput(_section, draft));
+    }
 
-        for (var i = 0; i < 3; i++)
-        {
-            station = DeckElevationEvaluator.GetCrossSectionStation(
-                subItem,
-                _section.RefFace,
-                hDist,
-                pointElevation);
+    private double? GetDirectElevationInput(Section section, XData draft)
+    {
+        if (section.Type == "Engineering Plans" || section.Type == "Engineering Survey")
+            return draft.VDist;
 
-            var deckEdgeElevation = ComputeDeckEdgeElevation(project, _section, station);
-            if (!deckEdgeElevation.HasValue)
-                break;
-
-            pointElevation = deckEdgeElevation.Value
-                             + _section.VertOffset
-                             - vDist
-                             - (draft.VAdjustment ? _section.VertAdjustment : 0.0);
-        }
-
-        result.Station = station;
-        result.StationString = Stationing.ToString(station);
-
-        if (pointElevation.HasValue)
-        {
-            result.Elevation = pointElevation.Value;
-            result.ElevationString = pointElevation.Value.ToString("F2");
-        }
-
-        result.VAdjustment = draft.VAdjustment;
-
-        return result;
+        return null;
     }
 
     private double? ParseNullableDouble(string? s)
@@ -839,25 +828,6 @@ else
             return d;
 
         return null;
-    }
-
-    private double? ComputeDeckEdgeElevation(BreaseProject project, Section section, double station)
-    {
-        if (project.VerticalAlignment == null || project.VerticalAlignment.Count == 0)
-            return null;
-
-        double centerlineElevation =
-            VerticalAlignmentEvaluator.GetCenterLineElevation(project.VerticalAlignment, station);
-
-        double crossSlopeHDist = project.CrossSlopeHorizontalDistance;
-        double crossSlope = CrossSlopeEvaluator.GetSlope(
-            project.ConstantCrossSlope,
-            project.VaryingCrossSlopes,
-            station);
-
-        double edgeDeckElevation = centerlineElevation + crossSlope * crossSlopeHDist;
-
-        return edgeDeckElevation;
     }
 
     private bool HasDuplicateCrossSectionDate(BreaseProject project, string dateToCheck)
