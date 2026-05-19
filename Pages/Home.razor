@@ -48,6 +48,8 @@ else
     <p>@status</p>
 }
 
+<CrossSectionStationElevationWarning Warnings="ProjectState.CrossSectionStationElevationWarnings" />
+
 @if (project is not null)
 {
     <div class="section-box">
@@ -669,6 +671,7 @@ else
             _originalCbzText = null;
             _originalCbzFileName = null;
             selectedFileName = null;
+            ProjectState.ClearCrossSectionStationElevationWarnings();
 
             ProjectState.OriginalCbzText = null;
             ProjectState.OriginalCbzFileName = null;
@@ -685,6 +688,7 @@ else
         {
             status = "Please select a .cbz file.";
             selectedFileName = file.Name;
+            ProjectState.ClearCrossSectionStationElevationWarnings();
             return;
         }
 
@@ -702,6 +706,7 @@ else
             _originalCbzText = await reader.ReadToEndAsync();
 
             ProjectState.OriginalCbzText = _originalCbzText;
+            ProjectState.UpdateCrossSectionStationElevationWarnings(_originalCbzText);
 
             using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(_originalCbzText));
             ms.Position = 0;
@@ -744,6 +749,7 @@ else
             _originalCbzText = null;
             _originalCbzFileName = null;
             selectedFileName = null;
+            ProjectState.ClearCrossSectionStationElevationWarnings();
 
             ProjectState.OriginalCbzText = null;
             ProjectState.OriginalCbzFileName = null;
@@ -1152,6 +1158,7 @@ else
             _originalCbzFileName = savedFileName;
             _originalCbzText = savedCbzText;
             project = restoredProject;
+            ProjectState.UpdateCrossSectionStationElevationWarnings(savedCbzText);
 
             if (restoredProject != null)
             {
@@ -1172,9 +1179,11 @@ else
             _originalCbzText = null;
             project = null;
             selectedFileName = null;
+            ProjectState.ClearCrossSectionStationElevationWarnings();
 
             status = "Saved CBZ data could not be restored and was cleared.";
             ProjectState.NotifyStateChanged();
         }
     }
+
 }

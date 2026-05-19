@@ -1,0 +1,42 @@
+@using System.Collections.Generic
+@using System.Linq
+@using Brease.Core.Validation
+
+@if (WarningList.Count > 0)
+{
+    <div class="alert alert-warning" role="alert">
+        <strong>Cross-section Station/Elev. warnings:</strong>
+        <ul class="mb-0">
+            @foreach (var warning in WarningList.Take(5))
+            {
+                <li>@FormatWarning(warning)</li>
+            }
+        </ul>
+        @if (WarningList.Count > 5)
+        {
+            <div>@(WarningList.Count - 5) more malformed cross-section point row(s).</div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter]
+    public IReadOnlyList<CbzCrossSectionStationElevationValidationResult>? Warnings { get; set; }
+
+    private IReadOnlyList<CbzCrossSectionStationElevationValidationResult> WarningList =>
+        Warnings ?? Array.Empty<CbzCrossSectionStationElevationValidationResult>();
+
+    private static string FormatWarning(CbzCrossSectionStationElevationValidationResult warning)
+    {
+        return
+            $"Date {DisplayField(warning.SectionDate)}, " +
+            $"Type {DisplayField(warning.SectionType)}, " +
+            $"Point {DisplayField(warning.PointNumber)}: " +
+            $"Station {warning.StationStatus}, Elev. {warning.ElevationStatus}";
+    }
+
+    private static string DisplayField(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "<blank>" : value;
+    }
+}

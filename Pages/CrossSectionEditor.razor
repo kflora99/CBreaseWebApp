@@ -24,6 +24,8 @@
 }
 else
 {
+    <CrossSectionStationElevationWarning Warnings="ProjectState.CrossSectionStationElevationWarnings" />
+
     @if (ProjectState.CurrentProject?.CrossSections?.Any() == true)
     {
         <div class="card mb-3">
@@ -622,6 +624,7 @@ else
                 : CbzService.AppendCrossSection(ProjectState.OriginalCbzText, sectionToSave);
 
             ProjectState.OriginalCbzText = updatedCbzText;
+            ProjectState.UpdateCrossSectionStationElevationWarnings(updatedCbzText);
 
             await JS.InvokeVoidAsync(
                 "projectStorage.saveCbz",
@@ -808,7 +811,8 @@ else
             project.ConstantCrossSlope,
             project.VaryingCrossSlopes,
             project.CrossSlopeHorizontalDistance,
-            GetDirectElevationInput(_section, draft));
+            GetDirectElevationInput(_section, draft),
+            GetElevationMode(_section));
     }
 
     private double? GetDirectElevationInput(Section section, XData draft)
@@ -817,6 +821,14 @@ else
             return draft.VDist;
 
         return null;
+    }
+
+    private static CrossSectionPointElevationMode GetElevationMode(Section section)
+    {
+        if (section.Type == "Engineering Plans" || section.Type == "Engineering Survey")
+            return CrossSectionPointElevationMode.DirectEnteredElevation;
+
+        return CrossSectionPointElevationMode.DeckBasedElevation;
     }
 
     private bool HasDuplicateCrossSectionDate(BreaseProject project, string dateToCheck)
@@ -1096,6 +1108,7 @@ else
             ProjectState.OriginalCbzFileName = savedFileName;
             ProjectState.OriginalCbzText = savedCbzText;
             ProjectState.CurrentProject = restoredProject;
+            ProjectState.UpdateCrossSectionStationElevationWarnings(savedCbzText);
 
             _showLoadWarning = restoredProject is null;
 
@@ -1108,10 +1121,12 @@ else
             ProjectState.OriginalCbzFileName = null;
             ProjectState.OriginalCbzText = null;
             ProjectState.CurrentProject = null;
+            ProjectState.ClearCrossSectionStationElevationWarnings();
 
             _showLoadWarning = true;
 
             ProjectState.NotifyStateChanged();
         }
     }
+
 }

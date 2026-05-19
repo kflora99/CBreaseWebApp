@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using Brease.Core.Models;
+using Brease.Core.Validation;
 
 namespace CBreaseWebApp1.Services
 {
@@ -10,6 +13,7 @@ namespace CBreaseWebApp1.Services
 
         public string? OriginalCbzText { get; set; }
         public string? OriginalCbzFileName { get; set; }
+        public List<CbzCrossSectionStationElevationValidationResult> CrossSectionStationElevationWarnings { get; set; } = new();
 
         public Section? LastSavedCrossSection { get; set; }
 
@@ -26,9 +30,31 @@ namespace CBreaseWebApp1.Services
             CurrentProject = null;
             OriginalCbzText = null;
             OriginalCbzFileName = null;
+            CrossSectionStationElevationWarnings.Clear();
             LastSavedCrossSection = null;
             CrossSectionEditorPoints.Clear();
             NotifyStateChanged();
+        }
+
+        public void UpdateCrossSectionStationElevationWarnings(string? cbzText)
+        {
+            CrossSectionStationElevationWarnings = CbzCrossSectionStationElevationValidator
+                .ValidateLines(ReadLines(cbzText))
+                .Where(result => result.IsMalformed)
+                .ToList();
+        }
+
+        public void ClearCrossSectionStationElevationWarnings()
+        {
+            CrossSectionStationElevationWarnings.Clear();
+        }
+
+        private static IEnumerable<string> ReadLines(string? text)
+        {
+            using var reader = new StringReader(text ?? string.Empty);
+            string? line;
+            while ((line = reader.ReadLine()) != null)
+                yield return line;
         }
     }
 }
