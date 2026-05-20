@@ -87,7 +87,7 @@
     private bool collapseNavMenu = true;
     private string buildTimestampDisplay = AppInfo.BuildTimestampUtc;
 
-    private string DisplayVersion => ShortenVersion(AppInfo.Version);
+    private string DisplayVersion => GetDisplayVersion(AppInfo.Version);
     private string FullBuildInfo => $"v{AppInfo.Version} - {buildTimestampDisplay}";
 
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
@@ -127,7 +127,7 @@
         collapseNavMenu = true;
     }
 
-    private static string ShortenVersion(string version)
+    private static string GetDisplayVersion(string version)
     {
         if (string.IsNullOrWhiteSpace(version))
         {
@@ -135,16 +135,12 @@
         }
 
         var metadataIndex = version.IndexOf('+');
-        if (metadataIndex < 0 || metadataIndex == version.Length - 1)
+        if (metadataIndex < 0)
         {
             return version;
         }
 
-        var prefix = version[..metadataIndex];
-        var metadata = version[(metadataIndex + 1)..];
-        var shortMetadata = metadata.Length > 7 ? metadata[..7] : metadata;
-
-        return $"{prefix}+{shortMetadata}";
+        return version[..metadataIndex];
     }
 
     private bool HasLoadedProject => ProjectState.CurrentProject is not null;
