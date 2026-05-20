@@ -124,14 +124,22 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.15rem;
-    color: rgba(255, 255, 255, 0.72);
-    font-size: 0.72rem;
-    line-height: 1.3;
+    gap: 0.1rem;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 0.68rem;
+    line-height: 1.25;
     min-width: 0;
     max-width: 100%;
     white-space: normal;
     overflow: visible;
+}
+
+.nav-version-number {
+    font-weight: 500;
+}
+
+.nav-version-date {
+    color: rgba(255, 255, 255, 0.42);
 }
 
 .nav-version-number,
@@ -171,9 +179,9 @@
         margin-top: auto;
         box-sizing: border-box;
         width: 100%;
-        padding: 1rem 1rem 1.5rem 1rem;
-        font-size: 0.9rem;
-        color: #ddd;
+        padding: 0.5rem 1rem 0.85rem 1rem;
+        font-size: 0.8rem;
+        color: rgba(255, 255, 255, 0.55);
         border-top: 1px solid rgba(255, 255, 255, 0.15);
         flex-shrink: 0;
         min-width: 0;

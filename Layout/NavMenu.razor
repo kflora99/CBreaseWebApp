@@ -42,8 +42,8 @@
             </div>
         </nav>
 
-        <div class="nav-version px-3 py-2">
-            <span class="nav-version-number">@($"v{AppInfo.Version}")</span>
+        <div class="nav-version px-3 py-2" title="@FullBuildInfo">
+            <span class="nav-version-number">@($"v{DisplayVersion}")</span>
             <span class="nav-version-date">@buildTimestampDisplay</span>
         </div>
     </div>
@@ -76,8 +76,8 @@
     </nav>
 
     <div class="nav-footer px-3 pb-3">
-        <div class="nav-version">
-            <span class="nav-version-number">@($"v{AppInfo.Version}")</span>
+        <div class="nav-version" title="@FullBuildInfo">
+            <span class="nav-version-number">@($"v{DisplayVersion}")</span>
             <span class="nav-version-date">@buildTimestampDisplay</span>
         </div>
     </div>
@@ -86,6 +86,9 @@
 @code {
     private bool collapseNavMenu = true;
     private string buildTimestampDisplay = AppInfo.BuildTimestampUtc;
+
+    private string DisplayVersion => ShortenVersion(AppInfo.Version);
+    private string FullBuildInfo => $"v{AppInfo.Version} - {buildTimestampDisplay}";
 
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
 
@@ -123,5 +126,26 @@
     {
         collapseNavMenu = true;
     }
+
+    private static string ShortenVersion(string version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return "unknown";
+        }
+
+        var metadataIndex = version.IndexOf('+');
+        if (metadataIndex < 0 || metadataIndex == version.Length - 1)
+        {
+            return version;
+        }
+
+        var prefix = version[..metadataIndex];
+        var metadata = version[(metadataIndex + 1)..];
+        var shortMetadata = metadata.Length > 7 ? metadata[..7] : metadata;
+
+        return $"{prefix}+{shortMetadata}";
+    }
+
     private bool HasLoadedProject => ProjectState.CurrentProject is not null;
 }
