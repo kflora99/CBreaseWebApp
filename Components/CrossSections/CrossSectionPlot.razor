@@ -20,8 +20,9 @@
                     {
                         var xs = Project.CrossSections[i];
                         var key = GetCrossSectionKey(xs);
-                        var color = BridgeProfileSvgRenderer.GetSeriesColor(i);
-                        var symbol = BridgeProfileSvgRenderer.GetSeriesSymbol(i);
+                        var overlaySymbol = CrossSectionOverlaySymbolProvider.GetSymbol(i);
+                        var color = overlaySymbol.Color;
+                        var symbol = overlaySymbol.Symbol;
 
                         <label style="color:@color; font-weight:500; display:inline-flex; align-items:center; gap:4px;">
                             <input type="checkbox"
@@ -130,39 +131,5 @@
             Project,
             xs => GetCrossSectionVisible(GetCrossSectionKey(xs)),
             DraftPoints);
-    }
-    private static string RenderPlotMarker(double x, double y, string symbol, string color)
-    {
-        return symbol switch
-        {
-            "circle" =>
-                $@"<circle cx=""{x:0.###}"" cy=""{y:0.###}"" r=""2.9""
-        fill=""{color}"" stroke=""black"" stroke-width=""0.7"" />",
-
-            "square" =>
-                $@"<rect x=""{x - 2.9:0.###}"" y=""{y - 2.9:0.###}""
-        width=""5.8"" height=""5.8""
-        fill=""{color}"" stroke=""black"" stroke-width=""0.7"" />",
-
-            "triangle" =>
-                $@"<polygon points=""{x:0.###},{y - 3.3:0.###} {x + 3.1:0.###},{y + 2.7:0.###} {x - 3.1:0.###},{y + 2.7:0.###}""
-        fill=""{color}"" stroke=""black"" stroke-width=""0.7"" />",
-
-            "diamond" =>
-                $@"<polygon points=""{x:0.###},{y - 3.3:0.###} {x + 3.3:0.###},{y:0.###} {x:0.###},{y + 3.3:0.###} {x - 3.3:0.###},{y:0.###}""
-        fill=""{color}"" stroke=""black"" stroke-width=""0.7"" />",
-
-            "x" =>
-                $@"<g>
-        <line x1=""{x - 3:0.###}"" y1=""{y - 3:0.###}"" x2=""{x + 3:0.###}"" y2=""{y + 3:0.###}""
-              stroke=""{color}"" stroke-width=""1.3"" />
-        <line x1=""{x + 3:0.###}"" y1=""{y - 3:0.###}"" x2=""{x - 3:0.###}"" y2=""{y + 3:0.###}""
-              stroke=""{color}"" stroke-width=""1.3"" />
-       </g>",
-
-            _ =>
-                $@"<circle cx=""{x:0.###}"" cy=""{y:0.###}"" r=""2.9""
-        fill=""{color}"" stroke=""black"" stroke-width=""0.7"" />"
-        };
     }
 }

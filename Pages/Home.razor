@@ -735,7 +735,6 @@ else
                 ProjectState.OriginalCbzFileName,
                 ProjectState.OriginalCbzText);
 
-            InitializeCrossSectionVisibility();
             ProjectState.NotifyStateChanged();
 
             if (project is null)
@@ -779,10 +778,11 @@ else
         {
             selectedFileName = ProjectState.OriginalCbzFileName;
         }
-
-        InitializeCrossSectionVisibility();
     }
-    // ---------------- SVG helpers ----------------
+    // ---------------- Substructure detail sketch helpers ----------------
+    // This sketch is a local single-item detail view for Home's Substructure Details section.
+    // It intentionally uses SubstructureGeometryEvaluator for soffit elevations, but it is not
+    // the station-scaled bridge profile renderer used by CrossSectionPlot/BridgeProfileSvgRenderer.
 
     private static IEnumerable<double> GetElevations(
         SubstructureItem s,
@@ -1037,93 +1037,11 @@ else
 
     builder.AddMarkupContent(0, sb.ToString());
 };
-    private RenderFragment BridgeProfileSvg() => builder =>
- {
-     if (project is null)
-     {
-         builder.AddMarkupContent(0, "<div class=\"text-muted\">No project loaded.</div>");
-         return;
-     }
-
-     var svg = Brease.Core.Geometry.BridgeProfileSvgRenderer.Render(
-         project,
-         section => GetCrossSectionVisible(GetCrossSectionKey(section)));
-
-     builder.AddMarkupContent(1, svg);
- };
-
     private static string Display(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? "(none)" : value;
     }
 
-    private Dictionary<string, bool> _crossSectionVisibility = new();
-
-    private static string GetCrossSectionKey(Section section)
-    {
-        return $"{section.Number}:{section.Date}";
-    }
-
-    private bool GetCrossSectionVisible(string key)
-    {
-        return _crossSectionVisibility.TryGetValue(key, out var visible)
-            ? visible
-            : true;
-    }
-
-    private void SetCrossSectionVisible(string key, ChangeEventArgs e)
-    {
-        bool isVisible = false;
-
-        if (e.Value is bool b)
-            isVisible = b;
-        else if (e.Value is string s && bool.TryParse(s, out var parsed))
-            isVisible = parsed;
-
-        _crossSectionVisibility[key] = isVisible;
-    }
-
-    private void InitializeCrossSectionVisibility()
-    {
-        _crossSectionVisibility.Clear();
-
-        if (project?.CrossSections == null)
-            return;
-
-        foreach (var section in project.CrossSections)
-        {
-            var key = GetCrossSectionKey(section);
-            if (!_crossSectionVisibility.ContainsKey(key))
-                _crossSectionVisibility[key] = true;
-        }
-    }
-
-    private string RenderSymbolSvg(string symbol, string color)
-    {
-        return symbol switch
-        {
-            "circle" =>
-                $"<svg width='14' height='14' viewBox='0 0 14 14' style='vertical-align:middle'><circle cx='7' cy='7' r='4.5' fill='{color}' stroke='black' stroke-width='1'/></svg>",
-
-            "square" =>
-                $"<svg width='14' height='14' viewBox='0 0 14 14' style='vertical-align:middle'><rect x='3' y='3' width='8' height='8' fill='{color}' stroke='black' stroke-width='1'/></svg>",
-
-            "triangle" =>
-                $"<svg width='14' height='14' viewBox='0 0 14 14' style='vertical-align:middle'><polygon points='7,2 12,12 2,12' fill='{color}' stroke='black' stroke-width='1'/></svg>",
-
-            "diamond" =>
-                $"<svg width='14' height='14' viewBox='0 0 14 14' style='vertical-align:middle'><polygon points='7,1 13,7 7,13 1,7' fill='{color}' stroke='black' stroke-width='1'/></svg>",
-
-            "x" =>
-                $"<svg width='14' height='14' viewBox='0 0 14 14' style='vertical-align:middle'>" +
-                $"<line x1='3' y1='3' x2='11' y2='11' stroke='{color}' stroke-width='2' />" +
-                $"<line x1='11' y1='3' x2='3' y2='11' stroke='{color}' stroke-width='2' />" +
-                $"</svg>",
-
-            _ =>
-                $"<svg width='14' height='14' viewBox='0 0 14 14' style='vertical-align:middle'><circle cx='7' cy='7' r='4.5' fill='{color}' stroke='black' stroke-width='1'/></svg>"
-        };
-    }
     private async Task EnsureProjectLoadedAsync()
     {
         if (ProjectState.CurrentProject != null)
