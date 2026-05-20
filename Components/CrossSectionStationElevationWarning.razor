@@ -9,12 +9,12 @@
         <ul class="mb-0">
             @foreach (var warning in WarningList.Take(5))
             {
-                <li>@FormatWarning(warning)</li>
+                <li>@CbzCrossSectionStationElevationValidationFormatter.FormatIssue(warning)</li>
             }
         </ul>
         @if (WarningList.Count > 5)
         {
-            <div>@(WarningList.Count - 5) more malformed cross-section point row(s).</div>
+            <div>@CbzCrossSectionStationElevationValidationFormatter.FormatMoreLine(WarningList.Count - 5)</div>
         }
     </div>
 }
@@ -25,18 +25,4 @@
 
     private IReadOnlyList<CbzCrossSectionStationElevationValidationResult> WarningList =>
         Warnings ?? Array.Empty<CbzCrossSectionStationElevationValidationResult>();
-
-    private static string FormatWarning(CbzCrossSectionStationElevationValidationResult warning)
-    {
-        return
-            $"Date {DisplayField(warning.SectionDate)}, " +
-            $"Type {DisplayField(warning.SectionType)}, " +
-            $"Point {DisplayField(warning.PointNumber)}: " +
-            $"Station {warning.StationStatus}, Elev. {warning.ElevationStatus}";
-    }
-
-    private static string DisplayField(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? "<blank>" : value;
-    }
 }
