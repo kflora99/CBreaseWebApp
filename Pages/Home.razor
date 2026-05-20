@@ -3,6 +3,7 @@
 @using System.IO
 @using Brease.Core
 @using Brease.Core.Models
+@using Brease.Core.Readers
 @using Brease.Core.Utilities
 @using Microsoft.AspNetCore.Components.Forms
 @using Brease.Core.Geometry
@@ -706,13 +707,17 @@ else
             _originalCbzText = await reader.ReadToEndAsync();
 
             ProjectState.OriginalCbzText = _originalCbzText;
-            ProjectState.UpdateCrossSectionStationElevationWarnings(_originalCbzText);
 
             using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(_originalCbzText));
             ms.Position = 0;
 
-            project = ProjectLoader.LoadFromStream(ms, file.Name);
+            var loadResult = ProjectLoader.TryLoadFromStream(ms, file.Name, CreateWarningLoadOptions());
+            if (!loadResult.Succeeded)
+                throw loadResult.FatalException ?? new InvalidDataException("CBZ file could not be loaded.");
+
+            project = loadResult.Project;
             ProjectState.CurrentProject = project;
+            ProjectState.RefreshCrossSectionStationElevationWarningsFromLoadResult(loadResult);
             ProjectState.CrossSectionEditorPoints = new List<XData>();
             ProjectState.LastSavedCrossSection = null;
 
@@ -1146,9 +1151,14 @@ else
             using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(savedCbzText));
             ms.Position = 0;
 
-            var restoredProject = ProjectLoader.LoadFromStream(
+            var loadResult = ProjectLoader.TryLoadFromStream(
                 ms,
-                string.IsNullOrWhiteSpace(savedFileName) ? "RestoredProject.cbz" : savedFileName);
+                string.IsNullOrWhiteSpace(savedFileName) ? "RestoredProject.cbz" : savedFileName,
+                CreateWarningLoadOptions());
+            if (!loadResult.Succeeded)
+                throw loadResult.FatalException ?? new InvalidDataException("Saved CBZ data could not be restored.");
+
+            var restoredProject = loadResult.Project;
 
             ProjectState.OriginalCbzFileName = savedFileName;
             ProjectState.OriginalCbzText = savedCbzText;
@@ -1158,7 +1168,7 @@ else
             _originalCbzFileName = savedFileName;
             _originalCbzText = savedCbzText;
             project = restoredProject;
-            ProjectState.UpdateCrossSectionStationElevationWarnings(savedCbzText);
+            ProjectState.RefreshCrossSectionStationElevationWarningsFromLoadResult(loadResult);
 
             if (restoredProject != null)
             {
@@ -1184,6 +1194,15 @@ else
             status = "Saved CBZ data could not be restored and was cleared.";
             ProjectState.NotifyStateChanged();
         }
+    }
+
+    private static CbzLoadOptions CreateWarningLoadOptions()
+    {
+        return new CbzLoadOptions
+        {
+            ValidateCrossSectionStationElevation = true,
+            StrictCrossSectionStationElevation = false
+        };
     }
 
 }

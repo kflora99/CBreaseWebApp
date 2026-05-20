@@ -3,6 +3,7 @@
 @using System.Linq
 @using Brease.Core
 @using Brease.Core.Models
+@using Brease.Core.Readers
 @using CBreaseWebApp1.Services
 @using Brease.Core.Utilities
 @using Brease.Core.Geometry
@@ -624,7 +625,7 @@ else
                 : CbzService.AppendCrossSection(ProjectState.OriginalCbzText, sectionToSave);
 
             ProjectState.OriginalCbzText = updatedCbzText;
-            ProjectState.UpdateCrossSectionStationElevationWarnings(updatedCbzText);
+            ProjectState.RefreshCrossSectionStationElevationWarningsFromText(updatedCbzText);
 
             await JS.InvokeVoidAsync(
                 "projectStorage.saveCbz",
@@ -1101,14 +1102,19 @@ else
             using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(savedCbzText));
             ms.Position = 0;
 
-            var restoredProject = ProjectLoader.LoadFromStream(
+            var loadResult = ProjectLoader.TryLoadFromStream(
                 ms,
-                string.IsNullOrWhiteSpace(savedFileName) ? "RestoredProject.cbz" : savedFileName);
+                string.IsNullOrWhiteSpace(savedFileName) ? "RestoredProject.cbz" : savedFileName,
+                CreateWarningLoadOptions());
+            if (!loadResult.Succeeded)
+                throw loadResult.FatalException ?? new InvalidDataException("Saved CBZ data could not be restored.");
+
+            var restoredProject = loadResult.Project;
 
             ProjectState.OriginalCbzFileName = savedFileName;
             ProjectState.OriginalCbzText = savedCbzText;
             ProjectState.CurrentProject = restoredProject;
-            ProjectState.UpdateCrossSectionStationElevationWarnings(savedCbzText);
+            ProjectState.RefreshCrossSectionStationElevationWarningsFromLoadResult(loadResult);
 
             _showLoadWarning = restoredProject is null;
 
@@ -1127,6 +1133,15 @@ else
 
             ProjectState.NotifyStateChanged();
         }
+    }
+
+    private static CbzLoadOptions CreateWarningLoadOptions()
+    {
+        return new CbzLoadOptions
+        {
+            ValidateCrossSectionStationElevation = true,
+            StrictCrossSectionStationElevation = false
+        };
     }
 
 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Brease.Core.Models;
+using Brease.Core.Readers;
 using Brease.Core.Validation;
 
 namespace CBreaseWebApp1.Services
@@ -36,10 +37,18 @@ namespace CBreaseWebApp1.Services
             NotifyStateChanged();
         }
 
-        public void UpdateCrossSectionStationElevationWarnings(string? cbzText)
+        public void RefreshCrossSectionStationElevationWarningsFromText(string? cbzText)
         {
             CrossSectionStationElevationWarnings = CbzCrossSectionStationElevationValidator
                 .ValidateLines(ReadLines(cbzText))
+                .Where(result => result.IsMalformed)
+                .ToList();
+        }
+
+        public void RefreshCrossSectionStationElevationWarningsFromLoadResult(CbzLoadResult? loadResult)
+        {
+            CrossSectionStationElevationWarnings = (loadResult?.CrossSectionStationElevationIssues
+                    ?? Enumerable.Empty<CbzCrossSectionStationElevationValidationResult>())
                 .Where(result => result.IsMalformed)
                 .ToList();
         }
