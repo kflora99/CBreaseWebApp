@@ -138,12 +138,14 @@
     font-weight: 500;
 }
 
-.nav-version-date {
+.nav-version-date,
+.nav-version-time {
     color: rgba(255, 255, 255, 0.42);
 }
 
 .nav-version-number,
-.nav-version-date {
+.nav-version-date,
+.nav-version-time {
     display: block;
     max-width: 100%;
     overflow-wrap: anywhere;

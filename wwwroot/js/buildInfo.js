@@ -17,6 +17,7 @@ window.breaseBuildInfo = {
             const parts = new Intl.DateTimeFormat("en-US", {
                 month: "short",
                 day: "numeric",
+                year: "numeric",
                 hour: "numeric",
                 minute: "2-digit"
             }).formatToParts(date);
@@ -29,9 +30,9 @@ window.breaseBuildInfo = {
                 return part ? part.value : "";
             };
 
-            const dateText = `${value("month")} ${value("day")}`;
+            const dateText = `${value("month")} ${value("day")}, ${value("year")}`;
             const timeText = `${value("hour")}:${value("minute")} ${value("dayPeriod")}`.trim();
-            return `${dateText} ${timeText}`;
+            return `${dateText}\n${timeText}`;
         } catch (e) {
             return utcTimestamp || "unknown";
         }

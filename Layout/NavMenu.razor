@@ -44,7 +44,8 @@
 
         <div class="nav-version px-3 py-2" title="@FullBuildInfo">
             <span class="nav-version-number">@($"v{DisplayVersion}")</span>
-            <span class="nav-version-date">@buildTimestampDisplay</span>
+            <span class="nav-version-date">@BuildDateDisplay</span>
+            <span class="nav-version-time">@BuildTimeDisplay</span>
         </div>
     </div>
 </div>
@@ -78,7 +79,8 @@
     <div class="nav-footer px-3 pb-3">
         <div class="nav-version" title="@FullBuildInfo">
             <span class="nav-version-number">@($"v{DisplayVersion}")</span>
-            <span class="nav-version-date">@buildTimestampDisplay</span>
+            <span class="nav-version-date">@BuildDateDisplay</span>
+            <span class="nav-version-time">@BuildTimeDisplay</span>
         </div>
     </div>
 </div>
@@ -89,6 +91,8 @@
 
     private string DisplayVersion => GetDisplayVersion(AppInfo.Version);
     private string FullBuildInfo => $"v{AppInfo.Version} - {buildTimestampDisplay}";
+    private string BuildDateDisplay => GetBuildTimestampPart(0);
+    private string BuildTimeDisplay => GetBuildTimestampPart(1);
 
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
 
@@ -141,6 +145,17 @@
         }
 
         return version[..metadataIndex];
+    }
+
+    private string GetBuildTimestampPart(int index)
+    {
+        var parts = buildTimestampDisplay.Split('\n', 2, StringSplitOptions.TrimEntries);
+        if (parts.Length > index)
+        {
+            return parts[index];
+        }
+
+        return index == 0 ? buildTimestampDisplay : string.Empty;
     }
 
     private bool HasLoadedProject => ProjectState.CurrentProject is not null;
