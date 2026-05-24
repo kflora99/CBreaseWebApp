@@ -4,6 +4,7 @@
 @using Brease.Core.Models
 @using Brease.Core.Geometry
 @using System.Text
+@using System.Text.RegularExpressions
 
 <div class="card mb-3">
     <div class="card-header">
@@ -37,6 +38,13 @@
             </div>
         }
 
+        <div class="plot-toolbar" aria-label="Profile plot view controls">
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ZoomIn">Zoom In</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ZoomOut">Zoom Out</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ResetView">Reset View</button>
+            <span class="plot-zoom-level">@ZoomPercent%</span>
+        </div>
+
         <div class="border rounded p-2 bg-white plot-shell">
             @if (Project is null)
             {
@@ -44,7 +52,16 @@
             }
             else
             {
-                @((MarkupString)RenderCrossSectionSvg())
+                <div class="profile-pan-zoom-surface"
+                     @onwheel="HandleWheel"
+                     @onwheel:preventDefault="true"
+                     @onpointerdown="BeginPan"
+                     @onpointermove="Pan"
+                     @onpointerup="EndPan"
+                     @onpointercancel="EndPan"
+                     @onpointerleave="EndPan">
+                    @((MarkupString)RenderCrossSectionSvg())
+                </div>
             }
         </div>
     </div>
@@ -55,6 +72,40 @@
     [Parameter] public List<XData>? DraftPoints { get; set; }
 
     private readonly Dictionary<string, bool> _crossSectionVisibility = new();
+    private const double MinZoom = 1.0;
+    private const double MaxZoom = 8.0;
+    private double _svgWidth;
+    private double _svgHeight;
+    private double _viewBoxX;
+    private double _viewBoxY;
+    private double _viewBoxWidth;
+    private double _viewBoxHeight;
+    private string? _lastRenderedSvg;
+    private string? _lastPlotKey;
+    private double _lastPointerX;
+    private double _lastPointerY;
+    private readonly Dictionary<long, PlotPointer> _activePointers = new();
+    private PlotGestureMode _gestureMode = PlotGestureMode.None;
+    private double _lastPinchDistance;
+    private double _lastPinchMidpointX;
+    private double _lastPinchMidpointY;
+
+    private int ZoomPercent => _svgWidth <= 0 || _viewBoxWidth <= 0
+        ? 100
+        : (int)Math.Round((_svgWidth / _viewBoxWidth) * 100.0);
+
+    protected override void OnParametersSet()
+    {
+        var plotKey = BuildPlotKey();
+        if (!string.Equals(plotKey, _lastPlotKey, StringComparison.Ordinal))
+        {
+            _lastPlotKey = plotKey;
+            _lastRenderedSvg = null;
+            _svgWidth = 0.0;
+            _svgHeight = 0.0;
+            ResetView();
+        }
+    }
 
     private string GetCrossSectionKey(Section xs)
     {
@@ -83,6 +134,7 @@
     {
         bool isChecked = e.Value is bool b && b;
         _crossSectionVisibility[key] = isChecked;
+        _lastRenderedSvg = null;
     }
 
     private string RenderSymbolSvg(string symbol, string color)
@@ -127,9 +179,303 @@
         if (Project == null)
             return "<div class=\"text-muted\">No project loaded.</div>";
 
-        return BridgeProfileSvgRenderer.Render(
+        _lastRenderedSvg ??= BridgeProfileSvgRenderer.Render(
             Project,
             xs => GetCrossSectionVisible(GetCrossSectionKey(xs)),
             DraftPoints);
+
+        EnsureViewBoxInitialized(_lastRenderedSvg);
+        return ApplyViewBox(_lastRenderedSvg);
+    }
+
+    private string BuildPlotKey()
+    {
+        var crossSectionCount = Project?.CrossSections?.Count ?? 0;
+        var draftCount = DraftPoints?.Count ?? 0;
+        var draftKey = DraftPoints is null
+            ? string.Empty
+            : string.Join(";", DraftPoints.Select(p => string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}|{1}|{2}|{3}|{4}",
+                p.Station,
+                p.Elevation,
+                p.StationString,
+                p.ElevationString,
+                p.Description)));
+
+        return $"{Project?.FilePath}|{Project?.Version}|{crossSectionCount}|{draftCount}|{draftKey}";
+    }
+
+    private void ZoomIn()
+    {
+        ClearGestureState();
+        ZoomAtCenter(0.8);
+    }
+
+    private void ZoomOut()
+    {
+        ClearGestureState();
+        ZoomAtCenter(1.25);
+    }
+
+    private void ResetView()
+    {
+        _viewBoxX = 0.0;
+        _viewBoxY = 0.0;
+        _viewBoxWidth = _svgWidth;
+        _viewBoxHeight = _svgHeight;
+        ClearGestureState();
+    }
+
+    private void HandleWheel(WheelEventArgs e)
+    {
+        if (_svgWidth <= 0 || _svgHeight <= 0)
+            return;
+
+        ZoomAtCenter(e.DeltaY < 0 ? 0.88 : 1.14);
+    }
+
+    private void ZoomAtCenter(double scale)
+    {
+        if (_svgWidth <= 0 || _svgHeight <= 0 || _viewBoxWidth <= 0 || _viewBoxHeight <= 0)
+            return;
+
+        var centerX = _viewBoxX + _viewBoxWidth / 2.0;
+        var centerY = _viewBoxY + _viewBoxHeight / 2.0;
+        var newWidth = Math.Clamp(_viewBoxWidth * scale, _svgWidth / MaxZoom, _svgWidth / MinZoom);
+        var newHeight = Math.Clamp(_viewBoxHeight * scale, _svgHeight / MaxZoom, _svgHeight / MinZoom);
+
+        _viewBoxX = centerX - newWidth / 2.0;
+        _viewBoxY = centerY - newHeight / 2.0;
+        _viewBoxWidth = newWidth;
+        _viewBoxHeight = newHeight;
+        ClampViewBox();
+    }
+
+    private void BeginPan(PointerEventArgs e)
+    {
+        if (_svgWidth <= 0 || _svgHeight <= 0)
+            return;
+
+        if (e.IsPrimary && _activePointers.Count > 0 && !_activePointers.ContainsKey(e.PointerId))
+            ClearGestureState();
+
+        _activePointers[e.PointerId] = new PlotPointer(e.ClientX, e.ClientY, e.OffsetX, e.OffsetY);
+
+        if (_activePointers.Count == 2)
+        {
+            EnterPinchMode();
+            return;
+        }
+
+        if (_activePointers.Count == 1)
+            EnterPanMode(_activePointers.Values.First());
+    }
+
+    private void Pan(PointerEventArgs e)
+    {
+        if (_svgWidth <= 0 || _svgHeight <= 0)
+            return;
+
+        if (_activePointers.ContainsKey(e.PointerId))
+            _activePointers[e.PointerId] = new PlotPointer(e.ClientX, e.ClientY, e.OffsetX, e.OffsetY);
+
+        if (_gestureMode == PlotGestureMode.Pinch && _activePointers.Count == 2)
+        {
+            PinchZoom();
+            return;
+        }
+
+        if (_gestureMode != PlotGestureMode.Pan || _activePointers.Count != 1 || !_activePointers.ContainsKey(e.PointerId))
+            return;
+
+        var deltaX = e.ClientX - _lastPointerX;
+        var deltaY = e.ClientY - _lastPointerY;
+        _lastPointerX = e.ClientX;
+        _lastPointerY = e.ClientY;
+
+        _viewBoxX -= deltaX * (_viewBoxWidth / _svgWidth);
+        _viewBoxY -= deltaY * (_viewBoxHeight / _svgHeight);
+        ClampViewBox();
+    }
+
+    private void EndPan(PointerEventArgs e)
+    {
+        var wasPinching = _gestureMode == PlotGestureMode.Pinch;
+        _activePointers.Remove(e.PointerId);
+
+        if (wasPinching)
+            ClearPinchBaseline();
+
+        if (_activePointers.Count == 2)
+        {
+            EnterPinchMode();
+            return;
+        }
+
+        if (_activePointers.Count == 1)
+        {
+            EnterPanMode(_activePointers.Values.First());
+            return;
+        }
+
+        if (_activePointers.Count == 0)
+            ClearGestureState();
+    }
+
+    private void EnsureViewBoxInitialized(string svg)
+    {
+        if (_svgWidth > 0 && _svgHeight > 0)
+            return;
+
+        var match = Regex.Match(svg, @"viewBox=""0 0 (?<width>[\d.]+) (?<height>[\d.]+)""");
+        if (!match.Success)
+            return;
+
+        _svgWidth = double.Parse(match.Groups["width"].Value, CultureInfo.InvariantCulture);
+        _svgHeight = double.Parse(match.Groups["height"].Value, CultureInfo.InvariantCulture);
+        ResetView();
+    }
+
+    private string ApplyViewBox(string svg)
+    {
+        if (_svgWidth <= 0 || _svgHeight <= 0 || _viewBoxWidth <= 0 || _viewBoxHeight <= 0)
+            return svg;
+
+        var viewBox = string.Format(
+            CultureInfo.InvariantCulture,
+            @"viewBox=""{0:0.###} {1:0.###} {2:0.###} {3:0.###}""",
+            _viewBoxX,
+            _viewBoxY,
+            _viewBoxWidth,
+            _viewBoxHeight);
+
+        var match = Regex.Match(svg, @"viewBox=""[^""]+""", RegexOptions.None, TimeSpan.FromMilliseconds(100));
+        if (!match.Success)
+            return svg;
+
+        return svg.Remove(match.Index, match.Length).Insert(match.Index, viewBox);
+    }
+
+    private void ClampViewBox()
+    {
+        if (_svgWidth <= 0 || _svgHeight <= 0)
+            return;
+
+        _viewBoxWidth = Math.Clamp(_viewBoxWidth, _svgWidth / MaxZoom, _svgWidth);
+        _viewBoxHeight = Math.Clamp(_viewBoxHeight, _svgHeight / MaxZoom, _svgHeight);
+        _viewBoxX = Math.Clamp(_viewBoxX, 0.0, Math.Max(0.0, _svgWidth - _viewBoxWidth));
+        _viewBoxY = Math.Clamp(_viewBoxY, 0.0, Math.Max(0.0, _svgHeight - _viewBoxHeight));
+    }
+
+    private void InitializePinch()
+    {
+        var pointers = _activePointers.Values.Take(2).ToArray();
+        if (pointers.Length < 2)
+            return;
+
+        _lastPinchDistance = GetDistance(pointers[0], pointers[1]);
+        _lastPinchMidpointX = (pointers[0].ClientX + pointers[1].ClientX) / 2.0;
+        _lastPinchMidpointY = (pointers[0].ClientY + pointers[1].ClientY) / 2.0;
+    }
+
+    private void PinchZoom()
+    {
+        var pointers = _activePointers.Values.Take(2).ToArray();
+        if (pointers.Length < 2)
+            return;
+
+        var distance = GetDistance(pointers[0], pointers[1]);
+        if (_gestureMode != PlotGestureMode.Pinch || _lastPinchDistance <= 0.0 || distance <= 0.0)
+        {
+            InitializePinch();
+            return;
+        }
+
+        var midpointX = (pointers[0].ClientX + pointers[1].ClientX) / 2.0;
+        var midpointY = (pointers[0].ClientY + pointers[1].ClientY) / 2.0;
+        var deltaX = midpointX - _lastPinchMidpointX;
+        var deltaY = midpointY - _lastPinchMidpointY;
+
+        _viewBoxX -= deltaX * (_viewBoxWidth / _svgWidth);
+        _viewBoxY -= deltaY * (_viewBoxHeight / _svgHeight);
+
+        var midpointOffsetX = (pointers[0].OffsetX + pointers[1].OffsetX) / 2.0;
+        var midpointOffsetY = (pointers[0].OffsetY + pointers[1].OffsetY) / 2.0;
+        var focusX = _viewBoxX + midpointOffsetX * (_viewBoxWidth / _svgWidth);
+        var focusY = _viewBoxY + midpointOffsetY * (_viewBoxHeight / _svgHeight);
+        ZoomAtSvgPoint(_lastPinchDistance / distance, focusX, focusY);
+
+        _lastPinchDistance = distance;
+        _lastPinchMidpointX = midpointX;
+        _lastPinchMidpointY = midpointY;
+    }
+
+    private void ZoomAtSvgPoint(double scale, double focusX, double focusY)
+    {
+        if (_svgWidth <= 0 || _svgHeight <= 0 || _viewBoxWidth <= 0 || _viewBoxHeight <= 0)
+            return;
+
+        var oldWidth = _viewBoxWidth;
+        var oldHeight = _viewBoxHeight;
+        var newWidth = Math.Clamp(oldWidth * scale, _svgWidth / MaxZoom, _svgWidth / MinZoom);
+        var newHeight = Math.Clamp(oldHeight * scale, _svgHeight / MaxZoom, _svgHeight / MinZoom);
+
+        var focusRatioX = oldWidth <= 0.0 ? 0.5 : (focusX - _viewBoxX) / oldWidth;
+        var focusRatioY = oldHeight <= 0.0 ? 0.5 : (focusY - _viewBoxY) / oldHeight;
+
+        _viewBoxX = focusX - focusRatioX * newWidth;
+        _viewBoxY = focusY - focusRatioY * newHeight;
+        _viewBoxWidth = newWidth;
+        _viewBoxHeight = newHeight;
+        ClampViewBox();
+    }
+
+    private static double GetDistance(PlotPointer first, PlotPointer second)
+    {
+        var dx = first.ClientX - second.ClientX;
+        var dy = first.ClientY - second.ClientY;
+        return Math.Sqrt(dx * dx + dy * dy);
+    }
+
+    private void ClearGestureState()
+    {
+        _activePointers.Clear();
+        _gestureMode = PlotGestureMode.None;
+        _lastPointerX = 0.0;
+        _lastPointerY = 0.0;
+        ClearPinchBaseline();
+    }
+
+    private void ClearPinchBaseline()
+    {
+        _lastPinchDistance = 0.0;
+        _lastPinchMidpointX = 0.0;
+        _lastPinchMidpointY = 0.0;
+    }
+
+    private void EnterPanMode(PlotPointer pointer)
+    {
+        ClearPinchBaseline();
+        _gestureMode = PlotGestureMode.Pan;
+        _lastPointerX = pointer.ClientX;
+        _lastPointerY = pointer.ClientY;
+    }
+
+    private void EnterPinchMode()
+    {
+        _gestureMode = PlotGestureMode.Pinch;
+        _lastPointerX = 0.0;
+        _lastPointerY = 0.0;
+        InitializePinch();
+    }
+
+    private readonly record struct PlotPointer(double ClientX, double ClientY, double OffsetX, double OffsetY);
+
+    private enum PlotGestureMode
+    {
+        None,
+        Pan,
+        Pinch
     }
 }
