@@ -81,6 +81,7 @@ else
             {
                 var sub = project.Substructures[si];
                 var geom = SubstructureGeometryEvaluator.Compute(project, sub);
+                var showPileRows = HasPileInformation(sub);
 
                 <details class="mb-3">
                     <summary>
@@ -145,29 +146,13 @@ else
                             {
                                 <tr><th>Item Bottom Elev</th><td>@sub.ItemBottomElevation.Value.ToString("0.##")</td></tr>
                             }
-                            @if (!string.IsNullOrWhiteSpace(sub.PileNumber))
+                            @if (showPileRows)
                             {
-                                <tr><th>Number of Piles</th><td>@sub.PileNumber</td></tr>
-                            }
-
-                            @if (!string.IsNullOrWhiteSpace(sub.PileSpacing))
-                            {
-                                <tr><th>Pile Spacing</th><td>@sub.PileSpacing</td></tr>
-                            }
-
-                            @if (sub.PileTopElevation.HasValue)
-                            {
-                                <tr><th>Pile Top Elev</th><td>@sub.PileTopElevation.Value.ToString("0.##")</td></tr>
-                            }
-
-                            @if (sub.PileTipElevation.HasValue)
-                            {
-                                <tr><th>Pile Tip Elev</th><td>@sub.PileTipElevation.Value.ToString("0.##")</td></tr>
-                            }
-
-                            @if (!string.IsNullOrWhiteSpace(sub.PileWidth))
-                            {
-                                <tr><th>Pile Width</th><td>@sub.PileWidth</td></tr>
+                                <tr><th>Pile Width</th><td>@DisplayUnknown(sub.PileWidth)</td></tr>
+                                <tr><th>Number of Piles</th><td>@DisplayUnknown(sub.PileNumber)</td></tr>
+                                <tr><th>Pile Spacing</th><td>@DisplayUnknown(sub.PileSpacing)</td></tr>
+                                <tr><th>Pile Top Elev</th><td>@DisplayElevationUnknown(sub.PileTopElevation)</td></tr>
+                                <tr><th>Pile Tip Elev</th><td>@DisplayElevationUnknown(sub.PileTipElevation)</td></tr>
                             }
 
                             @if (sub.TremieSealTopElevation.HasValue)
@@ -856,32 +841,15 @@ else
             out footingWidthFt);
     if (footingWidthFt <= 0.0) footingWidthFt = 2.5;
 
-    int pileCountForScale = 1;
-    if (!string.IsNullOrWhiteSpace(s.PileNumber))
-        int.TryParse(s.PileNumber.Trim(), out pileCountForScale);
-    if (pileCountForScale < 1) pileCountForScale = 1;
+    var hasCompletePileGeometry = TryGetCompletePileGeometry(
+        s,
+        out var completePileDia,
+        out var completePileCount,
+        out var completePileCenterSpacing);
 
-    double pileDiaForScale = 1.0;
-    if (!string.IsNullOrWhiteSpace(s.PileWidth))
-        double.TryParse(
-            s.PileWidth.Trim(),
-            System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands,
-            System.Globalization.CultureInfo.InvariantCulture,
-            out pileDiaForScale);
-    if (pileDiaForScale <= 0.0) pileDiaForScale = 1.0;
-
-    double clearSpacingForScale = 0.0;
-    if (!string.IsNullOrWhiteSpace(s.PileSpacing))
-        double.TryParse(
-            s.PileSpacing.Trim(),
-            System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands,
-            System.Globalization.CultureInfo.InvariantCulture,
-            out clearSpacingForScale);
-    if (clearSpacingForScale < 0.0) clearSpacingForScale = 0.0;
-
-    var pileGroupWidthFt =
-        pileCountForScale * pileDiaForScale +
-        (pileCountForScale - 1) * clearSpacingForScale;
+    var pileGroupWidthFt = hasCompletePileGeometry
+        ? completePileDia + (completePileCount - 1) * completePileCenterSpacing
+        : 0.0;
 
     var controllingWidthFt = Math.Max(footingWidthFt, pileGroupWidthFt);
 
@@ -983,48 +951,40 @@ else
                      ?? s.FootingBottomElevation
                      ?? pileTip;
 
-        int pileCount = 1;
-        if (!string.IsNullOrWhiteSpace(s.PileNumber))
-            int.TryParse(s.PileNumber.Trim(), out pileCount);
-        if (pileCount < 1) pileCount = 1;
+        var yTop = Y(pileTop);
+        var yBot = Y(pileTip);
 
-        double pileDia = 1.0;
-        if (!string.IsNullOrWhiteSpace(s.PileWidth))
-            double.TryParse(
-                s.PileWidth.Trim(),
-                System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands,
-                System.Globalization.CultureInfo.InvariantCulture,
-                out pileDia);
-        if (pileDia <= 0.0) pileDia = 1.0;
-
-        double clearSpacing = 0.0;
-        if (!string.IsNullOrWhiteSpace(s.PileSpacing))
-            double.TryParse(
-                s.PileSpacing.Trim(),
-                System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands,
-                System.Globalization.CultureInfo.InvariantCulture,
-                out clearSpacing);
-        if (clearSpacing < 0.0) clearSpacing = 0.0;
-
-        var pileCenterSpacingFt = pileDia + clearSpacing;
-        var pileCenterSpacingPx = pileCenterSpacingFt * pxPerFt;
-        var pileWidthPx = Math.Max(3.0, pileDia * pxPerFt);
-
-        var firstPileX = xPile - ((pileCount - 1) * pileCenterSpacingPx / 2.0);
-
-        for (int i = 0; i < pileCount; i++)
+        if (hasCompletePileGeometry)
         {
-            var pileX = firstPileX + i * pileCenterSpacingPx;
+            var pileCenterSpacingPx = completePileCenterSpacing * pxPerFt;
+            var pileWidthPx = Math.Max(3.0, completePileDia * pxPerFt);
 
-            var yTop = Y(pileTop);
-            var yBot = Y(pileTip);
-            var rectY = Math.Min(yTop, yBot);
-            var rectH = Math.Abs(yBot - yTop);
+            var firstPileX = xPile - ((completePileCount - 1) * pileCenterSpacingPx / 2.0);
 
-            sb.AppendLine($@"
+            for (int i = 0; i < completePileCount; i++)
+            {
+                var pileX = firstPileX + i * pileCenterSpacingPx;
+
+                var rectY = Math.Min(yTop, yBot);
+                var rectH = Math.Abs(yBot - yTop);
+
+                sb.AppendLine($@"
   <rect x=""{pileX - pileWidthPx / 2.0:F1}"" y=""{rectY:F1}""
         width=""{pileWidthPx:F1}"" height=""{rectH:F1}""
         fill=""#666"" stroke=""#666"" />");
+            }
+        }
+        else
+        {
+            var questionY = (yTop + yBot) / 2.0 + 4.0;
+
+            sb.AppendLine($@"
+  <line x1=""{xPile:F1}"" y1=""{yTop:F1}"" x2=""{xPile:F1}"" y2=""{yBot:F1}""
+        stroke=""#666"" stroke-width=""1.8"" stroke-dasharray=""4 3"" />");
+
+            sb.AppendLine($@"
+  <text x=""{xPile + 6.0:F1}"" y=""{questionY:F1}""
+        text-anchor=""start"" font-size=""11"" fill=""#666"">?</text>");
         }
 
         sb.AppendLine($@"
@@ -1037,9 +997,111 @@ else
 
     builder.AddMarkupContent(0, sb.ToString());
 };
+    private static bool TryGetCompletePileGeometry(
+        SubstructureItem sub,
+        out double pileDia,
+        out int pileCount,
+        out double pileCenterSpacing)
+    {
+        pileDia = 0.0;
+        pileCount = 0;
+        pileCenterSpacing = 0.0;
+
+        if (!TryParsePositiveDouble(sub.PileWidth, out pileDia))
+            return false;
+
+        if (!TryParsePositiveInt(sub.PileNumber, out pileCount))
+            return false;
+
+        if (!TryParseNonNegativeDouble(sub.PileSpacing, out pileCenterSpacing))
+            return false;
+
+        return pileCount == 1 || pileCenterSpacing > 0.0;
+    }
+
+    private static bool TryParsePositiveInt(string? value, out int result)
+    {
+        result = 0;
+
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        var text = value.Trim();
+        if (int.TryParse(
+            text,
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var intValue))
+        {
+            result = intValue;
+            return result > 0;
+        }
+
+        if (!double.TryParse(
+                text,
+                System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var numericValue) ||
+            double.IsNaN(numericValue) ||
+            double.IsInfinity(numericValue) ||
+            numericValue <= 0.0 ||
+            numericValue > int.MaxValue)
+        {
+            return false;
+        }
+
+        result = (int)numericValue;
+        return result > 0;
+    }
+
+    private static bool TryParsePositiveDouble(string? value, out double result)
+    {
+        return TryParseDouble(value, out result) && result > 0.0;
+    }
+
+    private static bool TryParseNonNegativeDouble(string? value, out double result)
+    {
+        return TryParseDouble(value, out result) && result >= 0.0;
+    }
+
+    private static bool TryParseDouble(string? value, out double result)
+    {
+        result = 0.0;
+
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        return double.TryParse(
+                value.Trim(),
+                System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out result) &&
+            !double.IsNaN(result) &&
+            !double.IsInfinity(result);
+    }
+
     private static string Display(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? "(none)" : value;
+    }
+
+    private static string DisplayUnknown(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "Unknown" : value;
+    }
+
+    private static string DisplayElevationUnknown(double? value)
+    {
+        return value.HasValue ? value.Value.ToString("0.##") : "Unknown";
+    }
+
+    private static bool HasPileInformation(SubstructureItem sub)
+    {
+        return sub.HasPiles ||
+               sub.PileTipElevation.HasValue ||
+               !string.IsNullOrWhiteSpace(sub.PileWidth) ||
+               !string.IsNullOrWhiteSpace(sub.PileNumber) ||
+               !string.IsNullOrWhiteSpace(sub.PileSpacing);
     }
 
     private async Task EnsureProjectLoadedAsync()
