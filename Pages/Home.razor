@@ -315,12 +315,20 @@ else
         }
     }
     @* ---------------- SUPERSTRUCTURE / VERTICAL ALIGNMENT  ---------------- *@
-    @if ((project.VerticalAlignment is { Count: > 0 }) || (project.VsdTemplates is { Count: > 0 }))
+    @if ((project.VerticalAlignment is { Count: > 0 }) ||
+        project.ConstantStructuralDepth.HasValue ||
+        (project.VsdTemplates is { Count: > 0 }))
     {
         <div class="section-box">
             <h3>Superstructure / Vertical Alignment</h3>
 
             <div class="superstructure-section">
+                <div class="subsection">
+                    <div class="subsection-title">Structural Depth</div>
+
+                    <div><strong>Constant Structural Depth:</strong> @((project.ConstantStructuralDepth ?? 0.0).ToString("0.###"))</div>
+                    <div><strong>Number of VSD Templates:</strong> @(project.VsdTemplates?.Count ?? 0)</div>
+                </div>
 
                 @if (project.VerticalAlignment is { Count: > 0 })
                 {
@@ -433,13 +441,6 @@ else
                 {
                     <div class="subsection">
                         <div class="subsection-title">Variable Structural Depth Templates</div>
-
-                        <div class="mb-2">
-                            <strong>Constant Structural Depth:</strong>
-                            @((project.ConstantStructuralDepth ?? 0.0).ToString("0.###"))<br />
-                            <strong>Number of VSD Templates:</strong>
-                            @project.VsdTemplates.Count
-                        </div>
 
                         @foreach (var template in project.VsdTemplates)
                         {
