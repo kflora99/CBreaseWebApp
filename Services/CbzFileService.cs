@@ -1,14 +1,66 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using Brease.Core.Models;
+using Brease.Core.Readers;
 using Brease.Core.Services;
+using Brease.Core.Validation;
 
 namespace CBreaseWebApp1.Services
 {
     public class CbzFileService
     {
+        public CbzExportValidationResult ValidateExportText(string cbzText, string? fileNameHint = null)
+        {
+            if (string.IsNullOrWhiteSpace(cbzText))
+            {
+                return CbzExportValidationResult.Failure(
+                    "Export validation failed. The file was not saved.",
+                    "Generated CBZ text is empty.");
+            }
+
+            var loader = new CbzBreaseProjectLoader();
+            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(cbzText));
+            var result = loader.TryLoadFromStream(
+                stream,
+                fileNameHint,
+                new CbzLoadOptions { ValidateCrossSectionStationElevation = true });
+
+            if (!result.Succeeded)
+            {
+                return CbzExportValidationResult.Failure(
+                    "Export validation failed. The file was not saved.",
+                    result.ErrorMessage ?? "The generated CBZ could not be loaded.");
+            }
+
+            var malformedIssues = result.CrossSectionStationElevationIssues
+                .Where(issue => issue.IsMalformed)
+                .ToList();
+
+            var compatibilityNotes = CbzCompatibilityNoteService.BuildNotes(
+                result.Project!,
+                cbzText,
+                malformedIssues);
+
+            if (compatibilityNotes.Count > 0)
+            {
+                var details = CbzCompatibilityNoteService.FormatNoteSummary(
+                    compatibilityNotes,
+                    maxRows: 5);
+
+                return CbzExportValidationResult.Warning(
+                    "Export validation passed with compatibility notes. The CBZ file was generated successfully.",
+                    details);
+            }
+
+            return CbzExportValidationResult.Success(
+                "Export validation passed. The CBZ file was generated successfully.");
+        }
+
         public string AppendCrossSection(string originalText, Section newSection)
         {
             return AppendCrossSectionToCbzText(originalText, newSection);
@@ -103,6 +155,37 @@ namespace CBreaseWebApp1.Services
                 newBlock;
 
             return before + crossSectionText + after;
+        }
+    }
+
+    public sealed class CbzExportValidationResult
+    {
+        private CbzExportValidationResult(bool succeeded, bool hasWarnings, string message, string? details)
+        {
+            Succeeded = succeeded;
+            HasWarnings = hasWarnings;
+            Message = message;
+            Details = details;
+        }
+
+        public bool Succeeded { get; }
+        public bool HasWarnings { get; }
+        public string Message { get; }
+        public string? Details { get; }
+
+        public static CbzExportValidationResult Success(string message)
+        {
+            return new CbzExportValidationResult(true, false, message, null);
+        }
+
+        public static CbzExportValidationResult Warning(string message, string details)
+        {
+            return new CbzExportValidationResult(true, true, message, details);
+        }
+
+        public static CbzExportValidationResult Failure(string message, string details)
+        {
+            return new CbzExportValidationResult(false, false, message, details);
         }
     }
 }

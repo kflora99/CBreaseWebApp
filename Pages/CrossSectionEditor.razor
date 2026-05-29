@@ -105,7 +105,17 @@ else
 
     @if (!string.IsNullOrWhiteSpace(_statusMessage))
     {
-        <div class="alert alert-info mt-3">@_statusMessage</div>
+        <div class="@GetStatusAlertClass() mt-3">@_statusMessage</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(ExportMessage))
+    {
+        <div class="alert alert-info mt-3">@ExportMessage</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(ExportError))
+    {
+        <div class="alert alert-danger mt-3">@ExportError</div>
     }
 
     @if (_points.Count == 0)
@@ -137,6 +147,7 @@ else
 
     private string? ExportMessage;
     private string? ExportError;
+    private string _statusMessageKind = "info";
 
     private bool _focusHorizontalDistance;
     private bool _focusVerticalDistance;
@@ -148,6 +159,23 @@ else
 
     private List<XData> ComputedPoints => _points.Select(BuildComputedPoint).ToList();
     private XData DraftPreviewPoint => BuildComputedPoint(_draftPoint);
+
+    private void SetStatus(string message, string kind = "info")
+    {
+        _statusMessage = message;
+        _statusMessageKind = kind;
+    }
+
+    private string GetStatusAlertClass()
+    {
+        return _statusMessageKind switch
+        {
+            "success" => "alert alert-success",
+            "warning" => "alert alert-warning",
+            "danger" => "alert alert-danger",
+            _ => "alert alert-info"
+        };
+    }
 
     private List<(string Value, string Label)> GetSavedCrossSectionOptions()
     {
@@ -205,7 +233,7 @@ else
                 Description = string.Empty
             };
 
-            _statusMessage = $"Loaded saved cross-section dated {saved.Date} for editing.";
+            SetStatus($"Loaded saved cross-section dated {saved.Date} for editing.");
 
             ProjectState.NotifyStateChanged();
         }
@@ -360,7 +388,7 @@ else
 
                 _editingPointIndex = null;
                 _allowSaveWithReorderWarning = false;
-                _statusMessage = $"Restored unsaved draft from {draft.SavedAtUtc.ToLocalTime():g}.";
+                SetStatus($"Restored unsaved draft from {draft.SavedAtUtc.ToLocalTime():g}.");
 
                 ProjectState.NotifyStateChanged();
             }
@@ -443,12 +471,12 @@ else
         {
             _points[_editingPointIndex.Value] = next;
             _editingPointIndex = null;
-            _statusMessage = $"Point {next.Point} updated.";
+            SetStatus($"Point {next.Point} updated.");
         }
         else
         {
             _points.Add(next);
-            _statusMessage = $"Point {next.Point} added.";
+            SetStatus($"Point {next.Point} added.");
         }
 
         RenumberPoints();
@@ -488,7 +516,7 @@ else
             _focusHorizontalDistance = true;
             _focusVerticalDistance = false;
             _editingPointIndex = index;
-            _statusMessage = $"Editing point {p.Point}.";
+            SetStatus($"Editing point {p.Point}.");
 
             await AutoSaveDraftAsync();
         }
@@ -521,7 +549,7 @@ else
         ProjectState.CrossSectionEditorPoints = _points;
         ProjectState.NotifyStateChanged();
 
-        _statusMessage = $"Point {deletedPointNo} deleted.";
+        SetStatus($"Point {deletedPointNo} deleted.");
 
         await AutoSaveDraftAsync();
         StateHasChanged();
@@ -532,7 +560,7 @@ else
         _editingPointIndex = null;
         _allowSaveWithReorderWarning = false;
         ResetDraftPoint(keepFromItem: true);
-        _statusMessage = "Edit cancelled.";
+        SetStatus("Edit cancelled.");
 
         await AutoSaveDraftAsync();
 
@@ -550,7 +578,7 @@ else
 
         if (project is null)
         {
-            _statusMessage = "No current project loaded.";
+            SetStatus("No current project loaded.", "danger");
             _allowSaveWithReorderWarning = false;
             return;
         }
@@ -564,7 +592,7 @@ else
         var validationErrors = _section.Validate();
         if (validationErrors.Any())
         {
-            _statusMessage = string.Join(" ", validationErrors);
+            SetStatus(string.Join(" ", validationErrors), "warning");
             _allowSaveWithReorderWarning = false;
             await AutoSaveDraftAsync();
             return;
@@ -572,7 +600,7 @@ else
 
         if (HasDuplicateCrossSectionDate(project, _section.Date))
         {
-            _statusMessage = $"A cross-section with date {_section.Date} already exists. Change the date before saving.";
+            SetStatus($"A cross-section with date {_section.Date} already exists. Change the date before saving.", "warning");
             _allowSaveWithReorderWarning = false;
             await AutoSaveDraftAsync();
             return;
@@ -583,7 +611,7 @@ else
             var stationList = string.Join(", ",
                 _section.Data.Select(p => $"{p.Point}:{p.StationString}"));
 
-            _statusMessage = $"Points are not in ascending station order. Current order is {stationList}. Click Save Cross-Section again to continue and automatically reorder the points.";
+            SetStatus($"Points are not in ascending station order. Current order is {stationList}. Click Save Cross-Section again to continue and automatically reorder the points.", "warning");
             _allowSaveWithReorderWarning = true;
             await AutoSaveDraftAsync();
             return;
@@ -605,25 +633,41 @@ else
             _loadedCrossSectionIndex.Value >= 0 &&
             _loadedCrossSectionIndex.Value < project.CrossSections.Count;
 
+        string? updatedCbzText = null;
+        CbzExportValidationResult? exportValidation = null;
+
+        if (!string.IsNullOrWhiteSpace(ProjectState.OriginalCbzText))
+        {
+            updatedCbzText = isUpdatingExisting
+                ? CbzService.ReplaceAllCrossSections(
+                    ProjectState.OriginalCbzText,
+                    project.CrossSections
+                        .Select((section, index) => index == _loadedCrossSectionIndex!.Value ? sectionToSave : section)
+                        .ToList())
+                : CbzService.AppendCrossSection(ProjectState.OriginalCbzText, sectionToSave);
+
+            exportValidation = CbzService.ValidateExportText(updatedCbzText, ProjectState.OriginalCbzFileName);
+            if (!exportValidation.Succeeded)
+            {
+                SetStatus($"{exportValidation.Message} {exportValidation.Details}".Trim(), "danger");
+                _allowSaveWithReorderWarning = false;
+                return;
+            }
+        }
+
         if (isUpdatingExisting)
         {
             project.CrossSections[_loadedCrossSectionIndex!.Value] = sectionToSave;
-            _statusMessage = $"Cross-section updated with {_points.Count} point(s).";
         }
         else
         {
             project.CrossSections.Add(sectionToSave);
             _loadedCrossSectionIndex = project.CrossSections.Count - 1;
             _selectedCrossSectionValue = _loadedCrossSectionIndex.Value.ToString();
-            _statusMessage = $"Cross-section saved with {_points.Count} point(s).";
         }
 
-        if (!string.IsNullOrWhiteSpace(ProjectState.OriginalCbzText))
+        if (!string.IsNullOrWhiteSpace(updatedCbzText))
         {
-            string updatedCbzText = isUpdatingExisting
-                ? CbzService.ReplaceAllCrossSections(ProjectState.OriginalCbzText, project.CrossSections)
-                : CbzService.AppendCrossSection(ProjectState.OriginalCbzText, sectionToSave);
-
             ProjectState.OriginalCbzText = updatedCbzText;
             ProjectState.RefreshCrossSectionStationElevationWarningsFromText(updatedCbzText);
 
@@ -639,9 +683,17 @@ else
         ProjectState.NotifyStateChanged();
 
 
-        _statusMessage = isUpdatingExisting
-            ? "Cross-section updated."
-            : "Cross-section saved.";
+        var savedMessage = isUpdatingExisting
+            ? "Cross-section updated. "
+            : "Cross-section saved. ";
+        if (exportValidation != null)
+        {
+            SetStatus(savedMessage + exportValidation.Message, exportValidation.HasWarnings ? "warning" : "success");
+        }
+        else
+        {
+            SetStatus(savedMessage.Trim(), "success");
+        }
 
         await ClearSavedDraftAsync();
         await ClearWorkingSectionInternalAsync(clearBrowserDraft: false);
@@ -688,7 +740,7 @@ else
         if (clearBrowserDraft)
         {
             await ClearSavedDraftAsync();
-            _statusMessage = "Current cross-section cleared.";
+            SetStatus("Current cross-section cleared.");
         }
 
         StateHasChanged();
@@ -1011,13 +1063,24 @@ else
                 fileName = "updated.cbz";
             }
 
+            var validation = CbzService.ValidateExportText(updatedCbzText, fileName);
+            if (!validation.Succeeded)
+            {
+                ExportError = $"{validation.Message} {validation.Details}".Trim();
+                return;
+            }
+
             await JS.InvokeVoidAsync(
                 "downloadFileFromText",
                 fileName,
                 "text/plain",
                 updatedCbzText);
 
-            ExportMessage = $"Exported {fileName}";
+            ExportMessage = validation.HasWarnings
+                ? $"{validation.Message} Exported {fileName}"
+                : $"{validation.Message} Exported {fileName}";
+            if (validation.HasWarnings && !string.IsNullOrWhiteSpace(validation.Details))
+                ExportMessage += $" {validation.Details}";
         }
         catch (Exception ex)
         {

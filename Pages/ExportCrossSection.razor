@@ -13,9 +13,26 @@
     <div class="alert alert-info">@StatusMessage</div>
 }
 
+@if (!string.IsNullOrWhiteSpace(WarningMessage))
+{
+    <div class="alert alert-warning">
+        <div>@WarningMessage</div>
+        @if (!string.IsNullOrWhiteSpace(WarningDetails))
+        {
+            <pre class="mb-0 mt-2 small text-wrap">@WarningDetails</pre>
+        }
+    </div>
+}
+
 @if (!string.IsNullOrWhiteSpace(ErrorMessage))
 {
-    <div class="alert alert-danger">@ErrorMessage</div>
+    <div class="alert alert-danger">
+        <div>@ErrorMessage</div>
+        @if (!string.IsNullOrWhiteSpace(ErrorDetails))
+        {
+            <pre class="mb-0 mt-2 small text-wrap">@ErrorDetails</pre>
+        }
+    </div>
 }
 
 <button class="btn btn-primary" @onclick="ExportUpdatedCbzAsync">
@@ -24,12 +41,18 @@
 
 @code {
     private string? StatusMessage;
+    private string? WarningMessage;
+    private string? WarningDetails;
     private string? ErrorMessage;
+    private string? ErrorDetails;
 
     private async Task ExportUpdatedCbzAsync()
     {
         StatusMessage = null;
+        WarningMessage = null;
+        WarningDetails = null;
         ErrorMessage = null;
+        ErrorDetails = null;
 
         try
         {
@@ -62,6 +85,14 @@
                 fileName = "updated.cbz";
             }
 
+            var validation = CbzService.ValidateExportText(originalCbzText, fileName);
+            if (!validation.Succeeded)
+            {
+                ErrorMessage = validation.Message;
+                ErrorDetails = validation.Details;
+                return;
+            }
+
             var saved = await JS.InvokeAsync<bool>(
                 "saveFileFromText",
                 fileName,
@@ -77,7 +108,16 @@
                     originalCbzText);
             }
 
-            StatusMessage = $"Exported {fileName}";
+            if (validation.HasWarnings)
+            {
+                WarningMessage = validation.Message;
+                WarningDetails = validation.Details;
+                StatusMessage = $"Exported {fileName}";
+            }
+            else
+            {
+                StatusMessage = $"{validation.Message} Exported {fileName}";
+            }
         }
         catch (Exception ex)
         {
